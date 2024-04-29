@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
-	"net"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/codecrafters-io/redis-starter-go/internal/app/server"
 )
 
 var (
@@ -17,30 +20,34 @@ var (
 
 func run(_ context.Context, _ io.Writer, _ []string) error {
 	flag.Parse()
-	l, err := net.Listen("tcp", *listen)
-	defer l.Close()
-	if err != nil {
-		return fmt.Errorf("failed to listen: %w", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer signal.Stop(sigCh)
+	server := server.NewServer(server.Config{ListenAddr: *listen})
+	go func() {
+		if err := server.Listen(); err != nil {
+			slog.Error("failed to listen", "err", err)
+		}
+		cancel()
+	}()
+
+	select {
+	case <-ctx.Done():
+		slog.Info("context done, shutting down")
+	case <-sigCh:
+		slog.Info("received signal, shutting down")
 	}
-	slog.Info("listening", "port", l.Addr())
-	c, err := l.Accept()
-	if err != nil {
-		return fmt.Errorf("failed to accept connection: %w", err)
-	}
-	defer c.Close()
-	buf := make([]byte, 128)
-	_, err = c.Read(buf)
-	if err != nil {
-		return fmt.Errorf("failed to read command: %w", err)
-	}
-	slog.Info("received command", "command", string(buf))
-	_, err = c.Write([]byte("+PONG\r\n"))
-	if err != nil {
-		return fmt.Errorf("failed to write response: %w", err)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Close(ctx); err != nil {
+		slog.Error("failed to close server", "err", err)
 	}
 
+	slog.Info("server shutdown")
 	return nil
 }
+
 func main() {
 	ctx := context.Background()
 	if err := run(ctx, os.Stdout, os.Args); err != nil {
