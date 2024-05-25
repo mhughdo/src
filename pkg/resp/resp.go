@@ -63,14 +63,14 @@ func (r *Resp) String() string {
 		}
 		s, err := serializeResp(val)
 		if err != nil {
-			slog.Error("error serializing array: %v", err)
+			slog.Error("error serializing array", "err", err)
 			return ""
 		}
 		return s
 	case map[string]*Resp:
 		s, err := serializeResp(val)
 		if err != nil {
-			slog.Error("error serializing map: %v", err)
+			slog.Error("error serializing map", "err", err)
 			return ""
 		}
 		return s
@@ -345,7 +345,7 @@ func parseLen(line []byte) (int, error) {
 	return n, nil
 }
 
-func ErrRespone(conn net.Conn, buffer *bytes.Buffer, msg string) {
+func ErrResponse(conn net.Conn, buffer *bytes.Buffer, msg string) error {
 	slog.Error(msg)
 	buffer.Reset()
 	r := &Resp{
@@ -353,7 +353,8 @@ func ErrRespone(conn net.Conn, buffer *bytes.Buffer, msg string) {
 		Data:   []byte(msg),
 		Length: len(msg),
 	}
-	conn.Write(r.ToResponse())
+	_, err := conn.Write(r.ToResponse())
+	return err
 }
 
 func (r *Resp) ToResponse() []byte {

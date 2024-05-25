@@ -91,11 +91,19 @@ func (s *Server) handleConn(c net.Conn) {
 				if errors.Is(err, resp.ErrIncompleteInput) || errors.Is(err, resp.ErrUnknownType) || errors.Is(err, io.EOF) {
 					break
 				}
-				resp.ErrRespone(c, buffer, err.Error())
+				err := resp.ErrResponse(c, buffer, err.Error())
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
 				break
 			}
 			if r.Type != resp.Array || len(r.Data.([]*resp.Resp)) < 1 {
-				resp.ErrRespone(c, buffer, "invalid command format")
+				err := resp.ErrResponse(c, buffer, "invalid command format")
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
 				continue
 			}
 			cmdName := r.Data.([]*resp.Resp)[0].String()
@@ -105,17 +113,29 @@ func (s *Server) handleConn(c net.Conn) {
 			if err != nil {
 				// resp.ErrRespone(c, err.Error())
 				// TODO: handle error
-				c.Write([]byte("+OK\r\n"))
+				_, err := c.Write([]byte("+OK\r\n"))
 				buffer.Reset()
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
 				continue
 			}
 			res, err := cmd.Execute(args)
 			if err != nil {
-				resp.ErrRespone(c, buffer, fmt.Sprintf("failed to execute command: %s", err))
+				err := resp.ErrResponse(c, buffer, fmt.Sprintf("failed to execute command: %s", err))
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
 				continue
 			}
-			c.Write(res.ToResponse())
+			_, err = c.Write(res.ToResponse())
 			buffer.Reset()
+			if err != nil {
+				slog.Error("failed to write response", "err", err)
+				return
+			}
 		}
 	}
 }
