@@ -1,12 +1,17 @@
 package server
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+
+	"github.com/codecrafters-io/redis-starter-go/pkg/command"
+	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
 )
 
 const (
@@ -60,25 +65,77 @@ func (s *Server) loop() error {
 }
 
 func (s *Server) handleConn(c net.Conn) {
+	defer c.Close()
+
+	cFactory := command.NewCommandFactory()
+	reader := bufio.NewReader(c)
+	buffer := &bytes.Buffer{}
 	for {
-		buf := make([]byte, 128)
-		_, err := c.Read(buf)
+		part, err := reader.ReadBytes('\n')
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				slog.Info("connection closed")
+				slog.Info("connection closed", "addr", c.RemoteAddr())
 				return
 			}
-			slog.Error("failed to read command", "err", err)
+			slog.Error("failed to receive input", "err", err)
 			continue
 		}
-		if len(buf) == 0 {
-			continue
-		}
-		slog.Info("received command", "command", string(buf))
-		_, err = c.Write([]byte("+PONG\r\n"))
-		if err != nil {
-			slog.Error("failed to write response", "err", err)
-			continue
+		buffer.Write(part)
+		reader := resp.NewResp(bytes.NewReader(buffer.Bytes()))
+		for {
+			r, err := reader.ParseResp()
+			if err != nil {
+				if errors.Is(err, resp.ErrEmptyLine) {
+					break
+				}
+				if errors.Is(err, resp.ErrIncompleteInput) || errors.Is(err, resp.ErrUnknownType) || errors.Is(err, io.EOF) {
+					break
+				}
+				err := resp.ErrResponse(c, buffer, err.Error())
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
+				break
+			}
+			if r.Type != resp.Array || len(r.Data.([]*resp.Resp)) < 1 {
+				err := resp.ErrResponse(c, buffer, "invalid command format")
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
+				continue
+			}
+			cmdName := r.Data.([]*resp.Resp)[0].String()
+			args := r.Data.([]*resp.Resp)[1:]
+			cmd, err := cFactory.GetCommand(cmdName)
+
+			if err != nil {
+				// resp.ErrRespone(c, err.Error())
+				// TODO: handle error
+				_, err := c.Write([]byte("+OK\r\n"))
+				buffer.Reset()
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
+				continue
+			}
+			res, err := cmd.Execute(args)
+			if err != nil {
+				err := resp.ErrResponse(c, buffer, fmt.Sprintf("failed to execute command: %s", err))
+				if err != nil {
+					slog.Error("failed to write response", "err", err)
+					return
+				}
+				continue
+			}
+			_, err = c.Write(res.ToResponse())
+			buffer.Reset()
+			if err != nil {
+				slog.Error("failed to write response", "err", err)
+				return
+			}
 		}
 	}
 }
