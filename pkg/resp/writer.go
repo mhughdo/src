@@ -88,25 +88,25 @@ func (w *Writer) WriteValue(value any) error {
 	case *int64:
 		return w.writeInt(*v)
 	case uint:
-		return w.writeInt(int64(v))
+		return w.writeUint(uint64(v))
 	case *uint:
-		return w.writeInt(int64(*v))
+		return w.writeUint(uint64(*v))
 	case uint8:
-		return w.writeInt(int64(v))
+		return w.writeUint(uint64(v))
 	case *uint8:
-		return w.writeInt(int64(*v))
+		return w.writeUint(uint64(*v))
 	case uint16:
-		return w.writeInt(int64(v))
+		return w.writeUint(uint64(v))
 	case *uint16:
-		return w.writeInt(int64(*v))
+		return w.writeUint(uint64(*v))
 	case uint32:
-		return w.writeInt(int64(v))
+		return w.writeUint(uint64(v))
 	case *uint32:
-		return w.writeInt(int64(*v))
+		return w.writeUint(uint64(*v))
 	case uint64:
-		return w.writeInt(int64(v))
+		return w.writeUint(uint64(v))
 	case *uint64:
-		return w.writeInt(int64(*v))
+		return w.writeUint(uint64(*v))
 	case float32:
 		return w.writeFloat(float64(v))
 	case *float32:

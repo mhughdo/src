@@ -41,7 +41,6 @@ func (ec *EchoCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
 }
 
 type PingCommand struct {
-	wr *resp.Writer
 }
 
 func (pc *PingCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
