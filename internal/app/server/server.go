@@ -69,6 +69,8 @@ func (s *Server) handleConn(c net.Conn) {
 
 	cFactory := command.NewCommandFactory()
 	reader := bufio.NewReader(c)
+	bw := bufio.NewWriter(c)
+	writer := resp.NewWriter(bw)
 	buffer := &bytes.Buffer{}
 	for {
 		part, err := reader.ReadBytes('\n')
@@ -82,61 +84,57 @@ func (s *Server) handleConn(c net.Conn) {
 		}
 		buffer.Write(part)
 		reader := resp.NewResp(bytes.NewReader(buffer.Bytes()))
-		for {
-			r, err := reader.ParseResp()
-			if err != nil {
-				if errors.Is(err, resp.ErrEmptyLine) {
-					break
-				}
-				if errors.Is(err, resp.ErrIncompleteInput) || errors.Is(err, resp.ErrUnknownType) || errors.Is(err, io.EOF) {
-					break
-				}
-				err := resp.ErrResponse(c, buffer, err.Error())
-				if err != nil {
-					slog.Error("failed to write response", "err", err)
-					return
-				}
-				break
-			}
-			if r.Type != resp.Array || len(r.Data.([]*resp.Resp)) < 1 {
-				err := resp.ErrResponse(c, buffer, "invalid command format")
-				if err != nil {
-					slog.Error("failed to write response", "err", err)
-					return
-				}
+		r, err := reader.ParseResp()
+		if err != nil {
+			if errors.Is(err, resp.ErrEmptyLine) {
 				continue
 			}
-			cmdName := r.Data.([]*resp.Resp)[0].String()
-			args := r.Data.([]*resp.Resp)[1:]
-			cmd, err := cFactory.GetCommand(cmdName)
-
-			if err != nil {
-				// resp.ErrRespone(c, err.Error())
-				// TODO: handle error
-				_, err := c.Write([]byte("+OK\r\n"))
-				buffer.Reset()
-				if err != nil {
-					slog.Error("failed to write response", "err", err)
-					return
-				}
+			if errors.Is(err, resp.ErrIncompleteInput) || errors.Is(err, resp.ErrUnknownType) || errors.Is(err, io.EOF) {
 				continue
 			}
-			res, err := cmd.Execute(args)
-			if err != nil {
-				err := resp.ErrResponse(c, buffer, fmt.Sprintf("failed to execute command: %s", err))
-				if err != nil {
-					slog.Error("failed to write response", "err", err)
-					return
-				}
-				continue
-			}
-			_, err = c.Write(res.ToResponse())
-			buffer.Reset()
+			err := resp.ErrResponse(c, buffer, err.Error())
 			if err != nil {
 				slog.Error("failed to write response", "err", err)
 				return
 			}
+			buffer.Reset()
+			continue
 		}
+		if r.Type != resp.Array || len(r.Data.([]*resp.Resp)) < 1 {
+			err := resp.ErrResponse(c, buffer, "invalid command format")
+			if err != nil {
+				slog.Error("failed to write response", "err", err)
+				return
+			}
+			buffer.Reset()
+			continue
+		}
+		cmdName := r.Data.([]*resp.Resp)[0].String()
+		args := r.Data.([]*resp.Resp)[1:]
+		cmd, err := cFactory.GetCommand(cmdName)
+
+		if err != nil {
+			// resp.ErrRespone(c, err.Error())
+			// TODO: handle error
+			_, err := c.Write([]byte("+OK\r\n"))
+			if err != nil {
+				slog.Error("failed to write response", "err", err)
+				return
+			}
+			buffer.Reset()
+			continue
+		}
+		err = cmd.Execute(writer, args)
+		if err != nil {
+			err := resp.ErrResponse(c, buffer, fmt.Sprintf("failed to execute command: %s", err))
+			if err != nil {
+				slog.Error("failed to write response", "err", err)
+				return
+			}
+			buffer.Reset()
+			continue
+		}
+		buffer.Reset()
 	}
 }
 

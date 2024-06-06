@@ -52,30 +52,34 @@ func NewResp(rd io.Reader) *Resp {
 }
 
 func (r *Resp) String() string {
+	return string(r.Bytes())
+}
+
+func (r *Resp) Bytes() []byte {
 	switch val := r.Data.(type) {
 	case []byte:
-		return string(val)
+		return val
 	case nil:
-		return ""
+		return []byte{}
 	case []*Resp:
 		if r.Length == -1 {
-			return ""
+			return []byte{}
 		}
 		s, err := serializeResp(val)
 		if err != nil {
 			slog.Error("error serializing array", "err", err)
-			return ""
+			return []byte{}
 		}
 		return s
 	case map[string]*Resp:
 		s, err := serializeResp(val)
 		if err != nil {
 			slog.Error("error serializing map", "err", err)
-			return ""
+			return []byte{}
 		}
 		return s
 	default:
-		return ""
+		return []byte{}
 	}
 }
 
@@ -295,13 +299,13 @@ func (r *Resp) parseArray(line []byte) ([]*Resp, int, error) {
 	return arr, n, nil
 }
 
-func serializeResp(in any) (string, error) {
-	r, err := json.Marshal(in)
+func serializeResp(data any) ([]byte, error) {
+	r, err := json.Marshal(data)
 	if err != nil {
-		return "", fmt.Errorf("error marshalling resp: %w", err)
+		return []byte{}, fmt.Errorf("error marshalling resp: %w", err)
 	}
 
-	return string(r), nil
+	return r, nil
 }
 
 // func stringifyArray(s []*Resp) (string, error) {
@@ -360,11 +364,11 @@ func ErrResponse(conn net.Conn, buffer *bytes.Buffer, msg string) error {
 func (r *Resp) ToResponse() []byte {
 	switch r.Type {
 	case SimpleString, SimpleError, Integer, Null, Boolean, Double, BigNumber:
-		return []byte(fmt.Sprintf("%c%s\r\n", r.Type, r.Data))
+		return []byte(fmt.Sprintf("%c%s\r\n", r.Type, r))
 	case BulkString, VerbatimString:
-		return []byte(fmt.Sprintf("%c%d\r\n%s\r\n", r.Type, r.Length, r.Data))
+		return []byte(fmt.Sprintf("%c%d\r\n%s\r\n", r.Type, r.Length, r))
 	case BulkError:
-		return []byte(fmt.Sprintf("%c%d\r\nERR %s\r\n", r.Type, r.Length, r.Data))
+		return []byte(fmt.Sprintf("%c%d\r\nERR %s\r\n", r.Type, r.Length, r))
 	case Array, Pushes, Set:
 		b := []byte(fmt.Sprintf("%c%d\r\n", r.Type, r.Length))
 		for _, resp := range r.Data.([]*Resp) {
