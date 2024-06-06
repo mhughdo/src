@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
 )
 
@@ -13,33 +14,61 @@ var (
 )
 
 type Command interface {
-	Execute(args []*resp.Resp) (*resp.Resp, error)
+	Execute(wr *resp.Writer, args []*resp.Resp) error
 }
 
 type CommandFactory struct {
 	commands map[string]Command
 }
 
-type EchoCommand struct{}
-
-func (ec *EchoCommand) Execute(args []*resp.Resp) (*resp.Resp, error) {
-	if len(args) != 1 {
-		return nil, errors.New("wrong number of arguments for 'echo' command")
-	}
-	return &resp.Resp{Type: resp.BulkString, Data: args[0].Data, Length: args[0].Length}, nil
+type EchoCommand struct {
 }
 
-type PingCommand struct{}
+func (ec *EchoCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
+	if len(args) != 1 {
+		return errors.New("wrong number of arguments for 'echo' command")
+	}
+	err := wr.WriteValue(args[0].Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to write response: %w", err)
+	}
+	err = wr.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush response: %w", err)
+	}
 
-func (pc *PingCommand) Execute(args []*resp.Resp) (*resp.Resp, error) {
-	return &resp.Resp{Type: resp.SimpleString, Data: []byte("PONG")}, nil
+	return nil
+}
+
+type PingCommand struct {
+	wr *resp.Writer
+}
+
+func (pc *PingCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
+	if len(args) != 0 {
+		return errors.New("wrong number of arguments for 'ping' command")
+	}
+	err := wr.WriteSimpleValue(resp.SimpleString, []byte("PONG"))
+	if err != nil {
+		return fmt.Errorf("failed to write response: %w", err)
+	}
+	err = wr.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush response: %w", err)
+	}
+
+	return nil
 }
 
 func NewCommandFactory() *CommandFactory {
+	kv := keyval.NewStore()
+
 	return &CommandFactory{
 		commands: map[string]Command{
 			"echo": &EchoCommand{},
 			"ping": &PingCommand{},
+			"set":  &Set{kv: kv},
+			"get":  &Get{kv: kv},
 		},
 	}
 }
