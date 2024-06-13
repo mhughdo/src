@@ -3,7 +3,6 @@ package resp
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -314,14 +313,14 @@ func (r *Resp) parseArray(line []byte) ([]*Resp, int, error) {
 	return arr, n, nil
 }
 
-func serializeResp(data any) ([]byte, error) {
-	r, err := json.Marshal(data)
-	if err != nil {
-		return []byte{}, fmt.Errorf("error marshalling resp: %w", err)
-	}
+// func serializeResp(data any) ([]byte, error) {
+// 	r, err := json.Marshal(data)
+// 	if err != nil {
+// 		return []byte{}, fmt.Errorf("error marshalling resp: %w", err)
+// 	}
 
-	return r, nil
-}
+// 	return r, nil
+// }
 
 func stringifyArray(s []*Resp) ([]byte, error) {
 	var b strings.Builder
