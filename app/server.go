@@ -5,20 +5,20 @@ import (
 	"flag"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server"
+	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
 
 var (
 	listen = flag.String("listen", ":6379", "listen address")
 )
 
-func run(_ context.Context, _ io.Writer, _ []string) error {
+func run(ctx context.Context, _ io.Writer, _ []string) error {
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
@@ -26,25 +26,25 @@ func run(_ context.Context, _ io.Writer, _ []string) error {
 	defer signal.Stop(sigCh)
 	server := server.NewServer(server.Config{ListenAddr: *listen})
 	go func() {
-		if err := server.Listen(); err != nil {
-			slog.Error("failed to listen", "err", err)
+		if err := server.Listen(ctx); err != nil {
+			logger.Error(ctx, "failed to listen, err: %v", err)
 		}
 		cancel()
 	}()
 
 	select {
 	case <-ctx.Done():
-		slog.Info("context done, shutting down")
+		logger.Info(ctx, "context done, shutting down")
 	case <-sigCh:
-		slog.Info("received signal, shutting down")
+		logger.Info(ctx, "received signal, shutting down")
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Close(ctx); err != nil {
-		slog.Error("failed to close server", "err", err)
+		logger.Error(ctx, "failed to close server, err: %v", err)
 	}
 
-	slog.Info("server shutdown")
+	logger.Info(ctx, "server shutdown")
 	return nil
 }
 

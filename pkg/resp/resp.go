@@ -2,14 +2,15 @@ package resp
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
 	"strconv"
+	"strings"
+
+	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
 
 // RESP Data Types
@@ -56,6 +57,7 @@ func (r *Resp) String() string {
 }
 
 func (r *Resp) Bytes() []byte {
+	ctx := context.Background()
 	switch val := r.Data.(type) {
 	case []byte:
 		return val
@@ -65,16 +67,16 @@ func (r *Resp) Bytes() []byte {
 		if r.Length == -1 {
 			return []byte{}
 		}
-		s, err := serializeResp(val)
+		s, err := stringifyArray(val)
 		if err != nil {
-			slog.Error("error serializing array", "err", err)
+			logger.Error(ctx, "error serializing array, err: %v", err)
 			return []byte{}
 		}
 		return s
 	case map[string]*Resp:
-		s, err := serializeResp(val)
+		s, err := stringifyMap(val)
 		if err != nil {
-			slog.Error("error serializing map", "err", err)
+			logger.Error(ctx, "error serializing map, err: %v", err)
 			return []byte{}
 		}
 		return s
@@ -83,38 +85,51 @@ func (r *Resp) Bytes() []byte {
 	}
 }
 
-func (r *Resp) Int() int64 {
+func (r *Resp) Int() (int64, error) {
 	switch val := r.Data.(type) {
 	case []byte:
 		i, err := strconv.ParseInt(string(val), 10, 64)
 		if err != nil {
-			return 0
+			return 0, fmt.Errorf("failed to parse int: %w", err)
 		}
-		return i
+		return i, nil
 	default:
-		return 0
+		return 0, ErrInvalidType
 	}
 }
 
-func (r *Resp) Float() float64 {
+func (r *Resp) Uint() (uint64, error) {
+	switch val := r.Data.(type) {
+	case []byte:
+		i, err := strconv.ParseUint(string(val), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse uint: %w", err)
+		}
+		return i, nil
+	default:
+		return 0, ErrInvalidType
+	}
+}
+
+func (r *Resp) Float() (float64, error) {
 	switch val := r.Data.(type) {
 	case []byte:
 		f, err := strconv.ParseFloat(string(val), 64)
 		if err != nil {
-			return 0
+			return 0, fmt.Errorf("failed to parse float: %w", err)
 		}
-		return f
+		return f, nil
 	default:
-		return 0
+		return 0, ErrInvalidType
 	}
 }
 
-func (r *Resp) Bool() bool {
+func (r *Resp) Bool() (bool, error) {
 	switch val := r.Data.(type) {
 	case []byte:
-		return string(val) == "t"
+		return string(val) == "t", nil
 	default:
-		return false
+		return false, ErrInvalidType
 	}
 }
 
@@ -308,35 +323,35 @@ func serializeResp(data any) ([]byte, error) {
 	return r, nil
 }
 
-// func stringifyArray(s []*Resp) (string, error) {
-// 	var b strings.Builder
-// 	b.WriteString("[")
-// 	for i, resp := range s {
-// 		b.WriteString(resp.String())
-// 		if i < len(s)-1 {
-// 			b.WriteString(",")
-// 		}
-// 	}
-// 	b.WriteString("]")
-// 	return b.String(), nil
-// }
+func stringifyArray(s []*Resp) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("[")
+	for i, resp := range s {
+		b.WriteString(resp.String())
+		if i < len(s)-1 {
+			b.WriteString(",")
+		}
+	}
+	b.WriteString("]")
+	return []byte(b.String()), nil
+}
 
-// func stringifyMap(m map[string]*Resp) (string, error) {
-// 	var b strings.Builder
-// 	b.WriteString("{")
-// 	i := 0
-// 	for k, v := range m {
-// 		b.WriteString(k)
-// 		b.WriteString(":")
-// 		b.WriteString(v.String())
-// 		if i < len(m)-1 {
-// 			b.WriteString(",")
-// 		}
-// 		i++
-// 	}
-// 	b.WriteString("}")
-// 	return b.String(), nil
-// }
+func stringifyMap(m map[string]*Resp) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("{")
+	i := 0
+	for k, v := range m {
+		b.WriteString(k)
+		b.WriteString(":")
+		b.WriteString(v.String())
+		if i < len(m)-1 {
+			b.WriteString(",")
+		}
+		i++
+	}
+	b.WriteString("}")
+	return []byte(b.String()), nil
+}
 
 func parseLen(line []byte) (int, error) {
 	n, err := strconv.Atoi(string(line[1:]))
@@ -347,18 +362,6 @@ func parseLen(line []byte) (int, error) {
 		return 0, fmt.Errorf("error parsing length: invalid length %d", n)
 	}
 	return n, nil
-}
-
-func ErrResponse(conn net.Conn, buffer *bytes.Buffer, msg string) error {
-	slog.Error(msg)
-	buffer.Reset()
-	r := &Resp{
-		Type:   BulkError,
-		Data:   []byte(msg),
-		Length: len(msg),
-	}
-	_, err := conn.Write(r.ToResponse())
-	return err
 }
 
 func (r *Resp) ToResponse() []byte {
