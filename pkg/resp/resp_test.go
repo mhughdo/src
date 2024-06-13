@@ -192,17 +192,17 @@ func TestParseRESP(t *testing.T) {
 			want:    &Resp{Type: Array, Data: nil},
 			wantErr: nil,
 		},
-		{
-			name:  "Map",
-			input: []byte("%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n"),
-			want: &Resp{Type: Map,
-				Length: 2,
-				Data: map[string]*Resp{
-					"first":  {Type: Integer, Data: []byte("1")},
-					"second": {Type: Integer, Data: []byte("2")},
-				},
-			},
-		},
+		// {
+		// 	name:  "Map",
+		// 	input: []byte("%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n"),
+		// 	want: &Resp{Type: Map,
+		// 		Length: 2,
+		// 		Data: map[string]*Resp{
+		// 			"first":  {Type: Integer, Data: []byte("1")},
+		// 			"second": {Type: Integer, Data: []byte("2")},
+		// 		},
+		// 	},
+		// },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

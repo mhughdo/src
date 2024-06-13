@@ -90,7 +90,7 @@ func TestWriteArray(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
-			w := NewWriter(buf)
+			w := NewWriter(buf, RESP3)
 			err := w.WriteArray(tt.values)
 			if err != tt.wantErr {
 				t.Errorf("WriteArray() error = %v, wantErr %v", err, tt.wantErr)
@@ -103,7 +103,76 @@ func TestWriteArray(t *testing.T) {
 	}
 }
 
-func TestWriteValue(t *testing.T) {
+func TestWriteResp2Value(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		value   any
+		want    []byte
+		wantErr error
+	}{
+		{
+			name:    "BulkString",
+			value:   "Hello World",
+			want:    []byte("$11\r\nHello World\r\n"),
+			wantErr: nil,
+		},
+		{
+			name:  "EmptyBulkString",
+			value: "",
+			want:  []byte("$0\r\n\r\n"),
+		},
+		{
+			name:    "SimpleErr",
+			value:   errors.New("ERR unknown command"),
+			want:    []byte("-ERR unknown command\r\n"),
+			wantErr: nil,
+		},
+		{
+			name:    "Integer",
+			value:   1000,
+			want:    []byte("$4\r\n1000\r\n"),
+			wantErr: nil,
+		},
+		{
+			name:    "Float",
+			value:   3.14,
+			want:    []byte("$4\r\n3.14\r\n"),
+			wantErr: nil,
+		},
+		{
+			name:    "Nil",
+			value:   nil,
+			want:    []byte("$0\r\n\r\n"),
+			wantErr: nil,
+		},
+		{
+			name:    "Bool",
+			value:   true,
+			want:    []byte("$1\r\n1\r\n"),
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			w := NewWriter(buf, RESP2)
+			err := w.WriteValue(tt.value)
+			if err != tt.wantErr {
+				t.Errorf("WriteValue() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !bytes.Equal(buf.Bytes(), tt.want) {
+				t.Errorf("WriteValue() = %v, want %v", buf.Bytes(), tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteResp3Value(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -145,7 +214,7 @@ func TestWriteValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
-			w := NewWriter(buf)
+			w := NewWriter(buf, RESP3)
 			err := w.WriteValue(tt.value)
 			if err != tt.wantErr {
 				t.Errorf("WriteValue() error = %v, wantErr %v", err, tt.wantErr)
@@ -216,7 +285,7 @@ func TestWriteSimpleValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
-			w := NewWriter(buf)
+			w := NewWriter(buf, RESP3)
 			err := w.WriteSimpleValue(tt.valType, tt.value)
 			if err != tt.wantErr {
 				t.Errorf("WriteSimpleValue() error = %v, wantErr %v", err, tt.wantErr)

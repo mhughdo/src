@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
 )
@@ -14,7 +15,7 @@ var (
 )
 
 type Command interface {
-	Execute(wr *resp.Writer, args []*resp.Resp) error
+	Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error
 }
 
 type CommandFactory struct {
@@ -24,50 +25,34 @@ type CommandFactory struct {
 type EchoCommand struct {
 }
 
-func (ec *EchoCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
+func (ec *EchoCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error {
 	if len(args) != 1 {
-		return errors.New("wrong number of arguments for 'echo' command")
-	}
-	err := wr.WriteValue(args[0].Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to write response: %w", err)
-	}
-	err = wr.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush response: %w", err)
+		return wr.WriteError(errors.New("wrong number of arguments for 'echo' command"))
 	}
 
-	return nil
+	return wr.WriteValue(args[0].Bytes())
 }
 
 type PingCommand struct {
 }
 
-func (pc *PingCommand) Execute(wr *resp.Writer, args []*resp.Resp) error {
+func (pc *PingCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error {
 	if len(args) != 0 {
-		return errors.New("wrong number of arguments for 'ping' command")
+		return wr.WriteError(errors.New("wrong number of arguments for 'ping' command"))
 	}
-	err := wr.WriteSimpleValue(resp.SimpleString, []byte("PONG"))
-	if err != nil {
-		return fmt.Errorf("failed to write response: %w", err)
-	}
-	err = wr.Flush()
-	if err != nil {
-		return fmt.Errorf("failed to flush response: %w", err)
-	}
-
-	return nil
+	return wr.WriteSimpleValue(resp.SimpleString, []byte("PONG"))
 }
 
-func NewCommandFactory() *CommandFactory {
-	kv := keyval.NewStore()
-
+func NewCommandFactory(kv keyval.KV) *CommandFactory {
 	return &CommandFactory{
 		commands: map[string]Command{
-			"echo": &EchoCommand{},
-			"ping": &PingCommand{},
-			"set":  &Set{kv: kv},
-			"get":  &Get{kv: kv},
+			"echo":   &EchoCommand{},
+			"ping":   &PingCommand{},
+			"set":    &Set{kv: kv},
+			"get":    &Get{kv: kv},
+			"hello":  &Hello{},
+			"info":   &Info{},
+			"client": &ClientCmd{},
 		},
 	}
 }
