@@ -158,7 +158,7 @@ func TestWriteResp2Value(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
-			w := NewWriter(buf, RESP3)
+			w := NewWriter(buf, RESP2)
 			err := w.WriteValue(tt.value)
 			if err != tt.wantErr {
 				t.Errorf("WriteValue() error = %v, wantErr %v", err, tt.wantErr)
