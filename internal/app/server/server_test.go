@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/redis/go-redis/v9"
 	"github.com/test-go/testify/assert"
 	"github.com/test-go/testify/require"
@@ -30,7 +31,12 @@ func startServer(ctx context.Context) (*Server, int, error) {
 		return nil, 0, err
 	}
 	addr := fmt.Sprintf(":%d", port)
-	srv := NewServer(Config{ListenAddr: addr})
+	cfg := config.NewConfig()
+	err = cfg.Set(config.ListenAddrKey, addr)
+	if err != nil {
+		return nil, 0, err
+	}
+	srv := NewServer(cfg)
 	go func() {
 		if err := srv.Listen(ctx); err != nil {
 			panic(err)

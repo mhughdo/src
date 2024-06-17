@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/command"
 	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
@@ -17,34 +18,31 @@ const (
 	defaultListenAddr = ":6379"
 )
 
-type Config struct {
-	ListenAddr string
-}
-
 type Server struct {
 	ln       net.Listener
 	mu       sync.Mutex
-	cfg      Config
+	cfg      *config.Config
 	done     chan struct{}
 	clients  map[*client.Client]struct{}
 	cFactory *command.CommandFactory
 }
 
-func NewServer(cfg Config) *Server {
-	if cfg.ListenAddr == "" {
-		cfg.ListenAddr = defaultListenAddr
-	}
+func NewServer(cfg *config.Config) *Server {
 	return &Server{
 		mu:       sync.Mutex{},
 		cfg:      cfg,
 		done:     make(chan struct{}),
-		cFactory: command.NewCommandFactory(keyval.NewStore()),
+		cFactory: command.NewCommandFactory(keyval.NewStore(), cfg),
 		clients:  make(map[*client.Client]struct{}),
 	}
 }
 
 func (s *Server) Listen(ctx context.Context) error {
-	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
+	listenAddr, err := s.cfg.Get(config.ListenAddrKey)
+	if err != nil {
+		listenAddr = defaultListenAddr
+	}
+	ln, err := net.Listen("tcp", listenAddr)
 	logger.Info(ctx, "listening, addr: %s", ln.Addr())
 	if err != nil {
 		return err
