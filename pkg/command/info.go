@@ -16,9 +16,9 @@ var (
 	sections = map[string]map[string]string{
 		SERVER: {
 			"src_version":    "1.0.0",
-			"redis_version":  "6.2.6",
-			"redis_git_sha1": "547abf68",
-			"redis_build_id": "20240423",
+			"redis_version":  "7.4-rc1",
+			"redis_git_sha1": "random-sha1",
+			"redis_build_id": "20240616",
 			"redis_mode":     "standalone",
 		},
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
@@ -43,7 +44,7 @@ func (pc *PingCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.R
 	return wr.WriteSimpleValue(resp.SimpleString, []byte("PONG"))
 }
 
-func NewCommandFactory(kv keyval.KV) *CommandFactory {
+func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
 	return &CommandFactory{
 		commands: map[string]Command{
 			"echo":   &EchoCommand{},
@@ -53,6 +54,7 @@ func NewCommandFactory(kv keyval.KV) *CommandFactory {
 			"hello":  &Hello{},
 			"info":   &Info{},
 			"client": &ClientCmd{},
+			"config": &ConfigCmd{cfg: cfg},
 		},
 	}
 }
