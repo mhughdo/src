@@ -64,11 +64,11 @@ func (c *ConfigCmd) handleGet(cl *client.Client, wr *resp.Writer, args []*resp.R
 		}
 		return wr.WriteMap(resp)
 	} else {
-		var resp []any
+		var resp []string
 		for key, value := range valueMap {
 			resp = append(resp, key)
 			resp = append(resp, value)
 		}
-		return wr.WriteArray(resp)
+		return wr.WriteStringSlice(resp)
 	}
 }

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/command"
 	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
+	"github.com/codecrafters-io/redis-starter-go/pkg/rdb"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
 	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
@@ -23,18 +25,54 @@ type Server struct {
 	mu       sync.Mutex
 	cfg      *config.Config
 	done     chan struct{}
+	store    keyval.KV
 	clients  map[*client.Client]struct{}
 	cFactory *command.CommandFactory
 }
 
 func NewServer(cfg *config.Config) *Server {
+	store := keyval.NewStore()
 	return &Server{
 		mu:       sync.Mutex{},
 		cfg:      cfg,
 		done:     make(chan struct{}),
-		cFactory: command.NewCommandFactory(keyval.NewStore(), cfg),
+		store:    store,
+		cFactory: command.NewCommandFactory(store, cfg),
 		clients:  make(map[*client.Client]struct{}),
 	}
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	logger.Info(ctx, "Server initialized")
+	dir, _ := s.cfg.Get(config.DirKey)
+	dbFilename, _ := s.cfg.Get(config.DBFilenameKey)
+	file, openErr := os.Open(dir + "/" + dbFilename)
+	if openErr != nil && !os.IsNotExist(openErr) {
+		return fmt.Errorf("failed to open file, err: %v", openErr)
+	}
+	var isValidRDBFile bool
+	var stat os.FileInfo
+	var err error
+	if !os.IsNotExist(openErr) {
+		stat, err = file.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to get file stat, err: %v", err)
+		}
+		isValidRDBFile = !stat.IsDir()
+	}
+
+	if isValidRDBFile {
+		defer file.Close()
+		rdb := rdb.NewRDBParser(file)
+		if err := rdb.ParseRDB(ctx); err != nil {
+			return fmt.Errorf("failed to parse rdb, err: %v", err)
+		}
+		s.store.RestoreRDB(rdb.GetData(), rdb.GetExpiry())
+	}
+	if err := s.Listen(ctx); err != nil {
+		return fmt.Errorf("failed to listen, err: %v", err)
+	}
+	return nil
 }
 
 func (s *Server) Listen(ctx context.Context) error {
@@ -43,11 +81,11 @@ func (s *Server) Listen(ctx context.Context) error {
 		listenAddr = defaultListenAddr
 	}
 	ln, err := net.Listen("tcp", listenAddr)
-	logger.Info(ctx, "listening, addr: %s", ln.Addr())
 	if err != nil {
 		return err
 	}
 	s.ln = ln
+	logger.Info(ctx, "Ready to accept connections tcp on %s", listenAddr)
 	return s.loop(ctx)
 }
 
@@ -127,6 +165,9 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 
 func (s *Server) Close(_ context.Context) error {
 	close(s.done)
+	if s.ln == nil {
+		return nil
+	}
 	if err := s.ln.Close(); err != nil {
 		return fmt.Errorf("failed to close listener: %w", err)
 	}

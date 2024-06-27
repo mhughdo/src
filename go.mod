@@ -18,5 +18,6 @@ require (
 	github.com/redis/go-redis/v9 v9.5.3 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/test-go/testify v1.1.4 // indirect
+	github.com/zhuyie/golzf v0.0.0-20161112031142-8387b0307ade // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

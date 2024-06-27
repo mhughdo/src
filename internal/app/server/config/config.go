@@ -63,7 +63,7 @@ func (c *Config) Get(key string) (string, error) {
 	seachKey := strings.ToUpper(key)
 	value, exists := c.options[seachKey]
 	if !exists {
-		return "", ErrOptionNotFound
+		return "", fmt.Errorf("%s for %s", ErrOptionNotFound, key)
 	}
 	return value, nil
 }

@@ -35,7 +35,7 @@ func (h *Info) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) err
 	str := strings.Builder{}
 	if argsLen == 1 {
 		str.WriteString(buildSectionString(args[0].String(), sections[args[0].String()]))
-		return wr.WriteValue(str.String())
+		return wr.WriteString(str.String())
 	}
 	for sectionName, section := range sections {
 		str.WriteString(buildSectionString(sectionName, section))

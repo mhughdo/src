@@ -38,7 +38,7 @@ func startServer(ctx context.Context) (*Server, int, error) {
 	}
 	srv := NewServer(cfg)
 	go func() {
-		if err := srv.Listen(ctx); err != nil {
+		if err := srv.Start(ctx); err != nil {
 			panic(err)
 		}
 	}()
