@@ -17,7 +17,7 @@ import (
 
 var (
 	listen     = flag.String("listen", ":6379", "listen address")
-	dir        = flag.String("dir", "testdata", "data directory")
+	dir        = flag.String("dir", "/tmp/redis", "data directory")
 	dbFilename = flag.String("dbfilename", "dump.rdb", "database filename")
 )
 
