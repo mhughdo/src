@@ -91,7 +91,7 @@ func TestWriteArray(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
 			w := NewWriter(buf, RESP3)
-			err := w.WriteArray(tt.values)
+			err := w.WriteSlice(tt.values)
 			if err != tt.wantErr {
 				t.Errorf("WriteArray() error = %v, wantErr %v", err, tt.wantErr)
 				return

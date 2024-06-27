@@ -25,5 +25,5 @@ func (g *Get) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 		return wr.WriteNull(resp.BulkString)
 	}
 
-	return wr.WriteValue(val)
+	return wr.WriteBytes(val)
 }

@@ -22,9 +22,10 @@ var (
 )
 
 func run(ctx context.Context, _ io.Writer, _ []string) error {
-	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
+	logger.Info(ctx, "oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo")
+	flag.Parse()
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer signal.Stop(sigCh)
 	cfg := config.NewConfig()
@@ -38,7 +39,7 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 	}
 	server := server.NewServer(cfg)
 	go func() {
-		if err := server.Listen(ctx); err != nil {
+		if err := server.Start(ctx); err != nil {
 			logger.Error(ctx, "failed to listen, err: %v", err)
 		}
 		cancel()
@@ -48,7 +49,7 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 	case <-ctx.Done():
 		logger.Info(ctx, "context done, shutting down")
 	case <-sigCh:
-		logger.Info(ctx, "received signal, shutting down")
+		logger.Info(ctx, "Received signal, shutting down")
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -56,7 +57,7 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 		logger.Error(ctx, "failed to close server, err: %v", err)
 	}
 
-	logger.Info(ctx, "server shutdown")
+	logger.Info(ctx, "Redis is now ready to exit, bye bye...")
 	return nil
 }
 

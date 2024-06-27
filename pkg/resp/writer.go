@@ -77,13 +77,13 @@ func (w *Writer) WriteValue(value any) error {
 func (w *Writer) writeResp2Value(value any) error {
 	switch v := value.(type) {
 	case nil:
-		return w.writeString("")
+		return w.WriteString("")
 	case string:
-		return w.writeString(v)
+		return w.WriteString(v)
 	case []byte:
-		return w.writeBytes(BulkString, v)
+		return w.writeBytesWithType(BulkString, v)
 	case *string:
-		return w.writeString(*v)
+		return w.WriteString(*v)
 	case int:
 		return w.writeResp2Int(int64(v))
 	case *int:
@@ -144,7 +144,7 @@ func (w *Writer) writeResp2Value(value any) error {
 		return w.writeResp2Int(0)
 	case time.Time:
 		w.numBuf = v.AppendFormat(w.numBuf[:0], time.RFC3339Nano)
-		return w.writeBytes(BulkString, w.numBuf)
+		return w.writeBytesWithType(BulkString, w.numBuf)
 	case time.Duration:
 		return w.writeResp2Int(v.Nanoseconds())
 	case encoding.BinaryMarshaler:
@@ -152,23 +152,23 @@ func (w *Writer) writeResp2Value(value any) error {
 		if err != nil {
 			return err
 		}
-		return w.writeBytes(BulkString, b)
+		return w.writeBytesWithType(BulkString, b)
 	case net.IP:
-		return w.writeString(v.String())
+		return w.WriteString(v.String())
 	case error:
 		return w.WriteSimpleValue(SimpleError, []byte(v.Error()))
 	case RESPVersion:
 		return w.writeInt(int64(v))
 	default:
 		if reflect.ValueOf(value).Kind() == reflect.Slice {
-			return w.WriteArray(value)
+			return w.WriteSlice(value)
 		}
 		var rawMessage []byte
 		err := json.NewEncoder(w).Encode(value)
 		if err != nil {
 			return fmt.Errorf("failed to encode value: %w", err)
 		}
-		return w.writeBytes(BulkString, rawMessage)
+		return w.writeBytesWithType(BulkString, rawMessage)
 	}
 }
 
@@ -177,11 +177,11 @@ func (w *Writer) writeResp3Value(value any) error {
 	case nil:
 		return w.WriteSimpleValue(Null, []byte{})
 	case []byte:
-		return w.writeBytes(BulkString, v)
+		return w.writeBytesWithType(BulkString, v)
 	case string:
-		return w.writeString(v)
+		return w.WriteString(v)
 	case *string:
-		return w.writeString(*v)
+		return w.WriteString(*v)
 	case int:
 		return w.writeInt(int64(v))
 	case *int:
@@ -242,7 +242,7 @@ func (w *Writer) writeResp3Value(value any) error {
 		return w.WriteSimpleValue(Boolean, []byte{'f'})
 	case time.Time:
 		w.numBuf = v.AppendFormat(w.numBuf[:0], time.RFC3339Nano)
-		return w.writeBytes(BulkString, w.numBuf)
+		return w.writeBytesWithType(BulkString, w.numBuf)
 	case time.Duration:
 		return w.writeInt(v.Nanoseconds())
 	case encoding.BinaryMarshaler:
@@ -250,55 +250,76 @@ func (w *Writer) writeResp3Value(value any) error {
 		if err != nil {
 			return err
 		}
-		return w.writeBytes(BulkString, b)
+		return w.writeBytesWithType(BulkString, b)
 	case net.IP:
-		return w.writeString(v.String())
+		return w.WriteString(v.String())
 	case error:
-		return w.writeBytes(BulkError, []byte(v.Error()))
+		return w.writeBytesWithType(BulkError, []byte(v.Error()))
 	case RESPVersion:
 		return w.writeInt(int64(v))
 	default:
 		if reflect.ValueOf(value).Kind() == reflect.Slice {
-			return w.WriteArray(value)
+			return w.WriteSlice(value)
 		}
 		var rawMessage []byte
 		err := json.NewEncoder(w).Encode(value)
 		if err != nil {
 			return fmt.Errorf("failed to encode value: %w", err)
 		}
-		return w.writeBytes(BulkString, rawMessage)
+		return w.writeBytesWithType(BulkString, rawMessage)
 	}
 }
 
 func (w *Writer) writeResp2Int(n int64) error {
 	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatInt(n, 10))...)
-	return w.writeBytes(BulkString, w.numBuf)
+	return w.writeBytesWithType(BulkString, w.numBuf)
 }
 
 func (w *Writer) writeResp2Uint(n uint64) error {
 	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatUint(n, 10))...)
-	return w.writeBytes(BulkString, w.numBuf)
+	return w.writeBytesWithType(BulkString, w.numBuf)
 }
 
 func (w *Writer) writeResp2Float(f float64) error {
 	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatFloat(f, 'f', -1, 64))...)
-	return w.writeBytes(BulkString, w.numBuf)
+	return w.writeBytesWithType(BulkString, w.numBuf)
 }
 
-func (w *Writer) WriteArray(v any) error {
-	values, _ := v.([]any)
+func (w *Writer) WriteStringSlice(v []string) error {
+	if err := w.WriteByte(Array); err != nil {
+		return err
+	}
+	if err := w.writeLen(len(v)); err != nil {
+		return err
+	}
+	for i := range v {
+		if err := w.WriteString(v[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Writer) WriteSlice(v any) error {
+	reflectType := reflect.TypeOf(v)
+	if reflectType.Kind() == reflect.Ptr {
+		reflectType = reflectType.Elem()
+	}
+
+	if reflectType.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %s", reflectType.Kind())
+	}
 
 	if err := w.WriteByte(Array); err != nil {
 		return err
 	}
-
-	sLen := len(values)
+	values := reflect.ValueOf(v)
+	sLen := values.Len()
 	if err := w.writeLen(sLen); err != nil {
 		return err
 	}
-
-	for _, value := range values {
-		if err := w.WriteValue(value); err != nil {
+	for i := 0; i < sLen; i++ {
+		if err := w.WriteValue(values.Index(i).Interface()); err != nil {
 			return err
 		}
 	}
@@ -316,7 +337,7 @@ func (w *Writer) WriteMap(m map[string]any) error {
 	}
 
 	for k, v := range m {
-		if err := w.writeBytes(BulkString, []byte(k)); err != nil {
+		if err := w.writeBytesWithType(BulkString, []byte(k)); err != nil {
 			return err
 		}
 		if err := w.WriteValue(v); err != nil {
@@ -378,11 +399,15 @@ func (w *Writer) writeFloat(f float64) error {
 	return w.WriteSimpleValue(Double, w.numBuf)
 }
 
-func (w *Writer) writeString(s string) error {
-	return w.writeBytes(BulkString, []byte(s))
+func (w *Writer) WriteString(s string) error {
+	return w.writeBytesWithType(BulkString, []byte(s))
 }
 
-func (w *Writer) writeBytes(valType byte, b []byte) error {
+func (w *Writer) WriteBytes(b []byte) error {
+	return w.writeBytesWithType(BulkString, b)
+}
+
+func (w *Writer) writeBytesWithType(valType byte, b []byte) error {
 	if err := w.WriteByte(valType); err != nil {
 		return err
 	}

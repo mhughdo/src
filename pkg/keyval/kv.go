@@ -6,6 +6,7 @@ import (
 )
 
 type KV interface {
+	RestoreRDB(data map[string]string, expiry map[string]uint64)
 	Get(key string) ([]byte, error)
 	Set(key string, value []byte) error
 	Expire(key string, duration time.Duration)
@@ -14,6 +15,7 @@ type KV interface {
 	PExpireAt(key string, expiry time.Time)
 	Exists(key string) bool
 	DeleteTTL(key string)
+	Keys() []string
 }
 
 type kv struct {
@@ -56,6 +58,27 @@ func (kv *kv) Expire(key string, duration time.Duration) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	kv.expiry[key] = time.Now().Add(duration)
+}
+
+func (kv *kv) Keys() []string {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+	keys := make([]string, 0, len(kv.store))
+	for key := range kv.store {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func (kv *kv) RestoreRDB(data map[string]string, expiry map[string]uint64) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	for key, value := range data {
+		kv.store[key] = []byte(value)
+		if exp, ok := expiry[key]; ok {
+			kv.expiry[key] = time.UnixMilli(int64(exp))
+		}
+	}
 }
 
 func (kv *kv) PExpire(key string, duration time.Duration) {

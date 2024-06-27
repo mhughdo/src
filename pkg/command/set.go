@@ -64,7 +64,7 @@ func (s *Set) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 
 	if opts.NX {
 		if opts.GET && keyExists {
-			return wr.WriteValue(oldVal)
+			return wr.WriteBytes(oldVal)
 		}
 		if keyExists {
 			return wr.WriteNull(resp.BulkString)
@@ -97,7 +97,7 @@ func (s *Set) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 
 	if opts.GET {
 		if keyExists {
-			return wr.WriteValue(oldVal)
+			return wr.WriteBytes(oldVal)
 		} else {
 			return wr.WriteNull(resp.BulkString)
 		}

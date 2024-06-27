@@ -31,7 +31,7 @@ func (ec *EchoCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.R
 		return wr.WriteError(errors.New("wrong number of arguments for 'echo' command"))
 	}
 
-	return wr.WriteValue(args[0].Bytes())
+	return wr.WriteBytes(args[0].Bytes())
 }
 
 type PingCommand struct {
@@ -55,6 +55,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
 			"info":   &Info{},
 			"client": &ClientCmd{},
 			"config": &ConfigCmd{cfg: cfg},
+			"keys":   &Keys{kv: kv},
 		},
 	}
 }
