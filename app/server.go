@@ -22,7 +22,7 @@ var (
 )
 
 func run(ctx context.Context, _ io.Writer, _ []string) error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	sigCh := make(chan os.Signal, 1)
 	logger.Info(ctx, "oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo")
 	flag.Parse()

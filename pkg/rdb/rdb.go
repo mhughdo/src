@@ -12,7 +12,6 @@ import (
 
 	lzf "github.com/zhuyie/golzf"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/crc64"
 	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
 
@@ -296,53 +295,53 @@ func objTypeName(objType byte) string {
 	}
 }
 
-func (p *RDBParser) readFileContent() ([]byte, error) {
-	currentOffset, err := p.rd.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return nil, err
-	}
+// func (p *RDBParser) readFileContent() ([]byte, error) {
+// 	currentOffset, err := p.rd.Seek(0, io.SeekCurrent)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	// Go to the start of the file
-	if _, err := p.rd.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
+// 	// Go to the start of the file
+// 	if _, err := p.rd.Seek(0, io.SeekStart); err != nil {
+// 		return nil, err
+// 	}
 
-	content, err := io.ReadAll(p.rd)
-	if err != nil {
-		return nil, err
-	}
+// 	content, err := io.ReadAll(p.rd)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	// Restore reader to current offset
-	if _, err := p.rd.Seek(currentOffset, io.SeekStart); err != nil {
-		return nil, err
-	}
+// 	// Restore reader to current offset
+// 	if _, err := p.rd.Seek(currentOffset, io.SeekStart); err != nil {
+// 		return nil, err
+// 	}
 
-	return content, nil
-}
+// 	return content, nil
+// }
 
-func (p *RDBParser) verifyChecksum() error {
-	content, err := p.readFileContent()
-	if err != nil {
-		return err
-	}
+// func (p *RDBParser) verifyChecksum() error {
+// 	content, err := p.readFileContent()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// Exclude the last 8 bytes (checksum)
-	if len(content) < 8 {
-		return errors.New("RDB file too short")
-	}
-	data := content[:len(content)-8]
-	expectedChecksum := binary.LittleEndian.Uint64(content[len(content)-8:])
+// 	// Exclude the last 8 bytes (checksum)
+// 	if len(content) < 8 {
+// 		return errors.New("RDB file too short")
+// 	}
+// 	data := content[:len(content)-8]
+// 	expectedChecksum := binary.LittleEndian.Uint64(content[len(content)-8:])
 
-	crc64Checksum := crc64.New()
-	_, err = crc64Checksum.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to calculate checksum: %w", err)
-	}
-	if calculatedChecksum := crc64Checksum.Sum64(); calculatedChecksum != expectedChecksum {
-		return fmt.Errorf("checksum mismatch: expected %v, got %v", expectedChecksum, calculatedChecksum)
-	}
-	return nil
-}
+// 	crc64Checksum := crc64.New()
+// 	_, err = crc64Checksum.Write(data)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to calculate checksum: %w", err)
+// 	}
+// 	if calculatedChecksum := crc64Checksum.Sum64(); calculatedChecksum != expectedChecksum {
+// 		return fmt.Errorf("checksum mismatch: expected %v, got %v", expectedChecksum, calculatedChecksum)
+// 	}
+// 	return nil
+// }
 
 func (p *RDBParser) ParseRDB(ctx context.Context) error {
 	if err := p.readHeader(); err != nil {
