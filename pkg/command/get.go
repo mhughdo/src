@@ -17,10 +17,7 @@ func (g *Get) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 		return errors.New("wrong number of arguments for 'get' command")
 	}
 
-	val, err := g.kv.Get(args[0].String())
-	if err != nil {
-		return err
-	}
+	val := g.kv.Get(args[0].String())
 	if val == nil {
 		return wr.WriteNull(resp.BulkString)
 	}

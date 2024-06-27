@@ -56,6 +56,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
 			"client": &ClientCmd{},
 			"config": &ConfigCmd{cfg: cfg},
 			"keys":   &Keys{kv: kv},
+			"type":   &TypeCmd{kv: kv},
 		},
 	}
 }
