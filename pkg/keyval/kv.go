@@ -7,7 +7,7 @@ import (
 
 type KV interface {
 	RestoreRDB(data map[string]string, expiry map[string]uint64)
-	Get(key string) ([]byte, error)
+	Get(key string) []byte
 	Set(key string, value []byte) error
 	Expire(key string, duration time.Duration)
 	PExpire(key string, duration time.Duration)
@@ -31,19 +31,19 @@ func NewStore() KV {
 	}
 }
 
-func (kv *kv) Get(key string) ([]byte, error) {
+func (kv *kv) Get(key string) []byte {
 	kv.mu.RLock()
 	defer kv.mu.RUnlock()
 	if kv.isExpired(key) {
 		delete(kv.store, key)
 		delete(kv.expiry, key)
-		return nil, nil
+		return nil
 	}
 	value, found := kv.store[key]
 	if !found {
-		return nil, nil
+		return nil
 	}
-	return value, nil
+	return value
 }
 
 func (kv *kv) Set(key string, value []byte) error {

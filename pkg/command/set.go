@@ -58,7 +58,7 @@ func (s *Set) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 
 	var oldVal []byte
 	if opts.GET || opts.NX || opts.XX {
-		oldVal, _ = s.kv.Get(key)
+		oldVal = s.kv.Get(key)
 	}
 	keyExists := oldVal != nil
 
