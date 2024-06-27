@@ -48,23 +48,29 @@ func (s *Server) Start(ctx context.Context) error {
 	dbFilename, _ := s.cfg.Get(config.DBFilenameKey)
 	file, openErr := os.Open(dir + "/" + dbFilename)
 	if openErr != nil && !os.IsNotExist(openErr) {
-		return openErr
+		return fmt.Errorf("failed to open file, err: %v", openErr)
 	}
-	stat, err := file.Stat()
-	if err != nil {
-		return err
+	var isValidRDBFile bool
+	var stat os.FileInfo
+	var err error
+	if !os.IsNotExist(openErr) {
+		stat, err = file.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to get file stat, err: %v", err)
+		}
+		isValidRDBFile = !stat.IsDir()
 	}
-	if !os.IsNotExist(openErr) && !stat.IsDir() {
+
+	if isValidRDBFile {
 		defer file.Close()
 		rdb := rdb.NewRDBParser(file)
 		if err := rdb.ParseRDB(ctx); err != nil {
-			return err
+			return fmt.Errorf("failed to parse rdb, err: %v", err)
 		}
 		s.store.RestoreRDB(rdb.GetData(), rdb.GetExpiry())
 	}
-
 	if err := s.Listen(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to listen, err: %v", err)
 	}
 	return nil
 }

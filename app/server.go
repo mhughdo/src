@@ -17,7 +17,7 @@ import (
 
 var (
 	listen     = flag.String("listen", ":6379", "listen address")
-	dir        = flag.String("dir", "/tmp/redis", "data directory")
+	dir        = flag.String("dir", "testdata", "data directory")
 	dbFilename = flag.String("dbfilename", "dump.rdb", "database filename")
 )
 
@@ -40,7 +40,7 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 	server := server.NewServer(cfg)
 	go func() {
 		if err := server.Start(ctx); err != nil {
-			logger.Error(ctx, "failed to listen, err: %v", err)
+			logger.Error(ctx, "failed to start the server, err: %v", err)
 		}
 		cancel()
 	}()
