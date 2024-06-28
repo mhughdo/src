@@ -5,8 +5,26 @@ import (
 	"time"
 )
 
+type ValueType int
+
+const (
+	ValueTypeString ValueType = iota
+	ValueTypeList
+	ValueTypeHash
+	ValueTypeSet
+	ValueTypeSortedSet
+	ValueTypeStream
+	ValueTypeJSON
+)
+
+type Value struct {
+	Type   ValueType
+	Data   any
+	Expiry uint64
+}
+
 type KV interface {
-	RestoreRDB(data map[string]string, expiry map[string]uint64)
+	RestoreRDB(data map[string]Value)
 	Get(key string) []byte
 	Set(key string, value []byte) error
 	Expire(key string, duration time.Duration)
@@ -19,15 +37,13 @@ type KV interface {
 }
 
 type kv struct {
-	mu     sync.RWMutex
-	store  map[string][]byte
-	expiry map[string]time.Time
+	mu    sync.RWMutex
+	store map[string]Value
 }
 
 func NewStore() KV {
 	return &kv{
-		store:  make(map[string][]byte),
-		expiry: make(map[string]time.Time),
+		store: make(map[string]Value),
 	}
 }
 
@@ -36,28 +52,49 @@ func (kv *kv) Get(key string) []byte {
 	defer kv.mu.RUnlock()
 	if kv.isExpired(key) {
 		delete(kv.store, key)
-		delete(kv.expiry, key)
 		return nil
 	}
-	value, found := kv.store[key]
-	if !found {
+	v, found := kv.store[key]
+	if !found || v.Type != ValueTypeString {
 		return nil
 	}
-	return value
+	return v.Data.([]byte)
 }
 
 func (kv *kv) Set(key string, value []byte) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	kv.store[key] = value
-	delete(kv.expiry, key)
+	kv.store[key] = Value{
+		Type: ValueTypeString,
+		Data: value,
+	}
 	return nil
 }
 
 func (kv *kv) Expire(key string, duration time.Duration) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	kv.expiry[key] = time.Now().Add(duration)
+	if v, ok := kv.store[key]; ok {
+		v.Expiry = uint64(time.Now().Add(duration).UnixMilli())
+		kv.store[key] = v
+	}
+}
+
+func (kv *kv) PExpire(key string, duration time.Duration) {
+	kv.Expire(key, duration)
+}
+
+func (kv *kv) ExpireAt(key string, expiry time.Time) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if v, ok := kv.store[key]; ok {
+		v.Expiry = uint64(expiry.UnixMilli())
+		kv.store[key] = v
+	}
+}
+
+func (kv *kv) PExpireAt(key string, expiry time.Time) {
+	kv.ExpireAt(key, expiry)
 }
 
 func (kv *kv) Keys() []string {
@@ -70,29 +107,10 @@ func (kv *kv) Keys() []string {
 	return keys
 }
 
-func (kv *kv) RestoreRDB(data map[string]string, expiry map[string]uint64) {
+func (kv *kv) RestoreRDB(data map[string]Value) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	for key, value := range data {
-		kv.store[key] = []byte(value)
-		if exp, ok := expiry[key]; ok {
-			kv.expiry[key] = time.UnixMilli(int64(exp))
-		}
-	}
-}
-
-func (kv *kv) PExpire(key string, duration time.Duration) {
-	kv.Expire(key, duration)
-}
-
-func (kv *kv) ExpireAt(key string, expiry time.Time) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.expiry[key] = expiry
-}
-
-func (kv *kv) PExpireAt(key string, expiry time.Time) {
-	kv.ExpireAt(key, expiry)
+	kv.store = data
 }
 
 func (kv *kv) Exists(key string) bool {
@@ -103,10 +121,8 @@ func (kv *kv) Exists(key string) bool {
 }
 
 func (kv *kv) isExpired(key string) bool {
-	if exp, ok := kv.expiry[key]; ok {
-		if exp.Before(time.Now()) {
-			return true
-		}
+	if v, ok := kv.store[key]; ok && v.Expiry > 0 && v.Expiry < uint64(time.Now().UnixMilli()) {
+		return true
 	}
 	return false
 }
@@ -114,5 +130,8 @@ func (kv *kv) isExpired(key string) bool {
 func (kv *kv) DeleteTTL(key string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	delete(kv.expiry, key)
+	if v, ok := kv.store[key]; ok {
+		v.Expiry = 0
+		kv.store[key] = v
+	}
 }

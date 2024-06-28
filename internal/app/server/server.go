@@ -67,7 +67,7 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := rdb.ParseRDB(ctx); err != nil {
 			return fmt.Errorf("failed to parse rdb, err: %v", err)
 		}
-		s.store.RestoreRDB(rdb.GetData(), rdb.GetExpiry())
+		s.store.RestoreRDB(rdb.GetData())
 	}
 	if err := s.Listen(ctx); err != nil {
 		return fmt.Errorf("failed to listen, err: %v", err)

@@ -5,35 +5,64 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
 )
 
 func TestRDBParser(t *testing.T) {
 	tests := []struct {
-		name       string
-		filepath   string
-		want       map[string]string
-		wantExpiry map[string]uint64
-		wantErr    error
+		name     string
+		filepath string
+		want     map[string]keyval.Value
+		wantErr  error
 	}{
 		{
 			name:     "Normal",
 			filepath: "../../testdata/dump.rdb",
 			wantErr:  nil,
-			want: map[string]string{
-				"double":        "3.1456789",
-				"str":           "thisisastring",
-				"emptystr":      "",
-				"int64":         "-9223372036854775808",
-				"int":           "1000",
-				"boolean":       "true",
-				"bignumber":     "734589327589437589324758943278954389",
-				"strwithexpire": "not_expired",
-				"strwithPX":     "not_expired_with_PX",
-				"uint64":        "18446744073709551615",
-			},
-			wantExpiry: map[string]uint64{
-				"strwithexpire": 11719245191989,
-				"strwithPX":     101719245280555,
+			want: map[string]keyval.Value{
+				"double": {
+					Type: keyval.ValueTypeString,
+					Data: "3.1456789",
+				},
+				"str": {
+					Type: keyval.ValueTypeString,
+					Data: "thisisastring",
+				},
+				"emptystr": {
+					Type: keyval.ValueTypeString,
+					Data: "",
+				},
+				"int64": {
+					Type: keyval.ValueTypeString,
+					Data: "-9223372036854775808",
+				},
+				"int": {
+					Type: keyval.ValueTypeString,
+					Data: "1000",
+				},
+				"boolean": {
+					Type: keyval.ValueTypeString,
+					Data: "true",
+				},
+				"bignumber": {
+					Type: keyval.ValueTypeString,
+					Data: "734589327589437589324758943278954389",
+				},
+				"strwithexpire": {
+					Type:   keyval.ValueTypeString,
+					Data:   "not_expired",
+					Expiry: 11719245191989,
+				},
+				"strwithPX": {
+					Type:   keyval.ValueTypeString,
+					Data:   "not_expired_with_PX",
+					Expiry: 101719245280555,
+				},
+				"uint64": {
+					Type: keyval.ValueTypeString,
+					Data: "18446744073709551615",
+				},
 			},
 		},
 	}
@@ -54,12 +83,8 @@ func TestRDBParser(t *testing.T) {
 				return
 			}
 			gotData := rdb.GetData()
-			gotExpiry := rdb.GetExpiry()
 			if !reflect.DeepEqual(gotData, tt.want) {
 				t.Errorf("RDBParser.Parse() got = %v, want %v", gotData, tt.want)
-			}
-			if !reflect.DeepEqual(gotExpiry, tt.wantExpiry) {
-				t.Errorf("RDBParser.Parse() gotExpiry = %v, wantExpiry %v", gotExpiry, tt.wantExpiry)
 			}
 		})
 	}

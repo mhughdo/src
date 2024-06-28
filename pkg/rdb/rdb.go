@@ -12,6 +12,7 @@ import (
 
 	lzf "github.com/zhuyie/golzf"
 
+	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
 	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
 
@@ -42,15 +43,13 @@ type RDBParser struct {
 	rd     io.ReadSeeker
 	length uint64
 	db     uint64
-	data   map[string]string
-	expiry map[string]uint64
+	data   map[string]keyval.Value
 }
 
 func NewRDBParser(rd io.ReadSeeker) *RDBParser {
 	return &RDBParser{
-		rd:     rd,
-		data:   make(map[string]string),
-		expiry: make(map[string]uint64),
+		rd:   rd,
+		data: make(map[string]keyval.Value),
 	}
 }
 
@@ -259,9 +258,10 @@ func (p *RDBParser) handleObject(objType byte, expiry uint64) error {
 	if expiry > 0 && expiry < uint64(time.Now().UnixMilli()) {
 		return nil
 	}
-	p.data[key] = value
-	if expiry > uint64(time.Now().Unix()) {
-		p.expiry[key] = expiry
+	p.data[key] = keyval.Value{
+		Type:   keyval.ValueTypeString,
+		Data:   value,
+		Expiry: expiry,
 	}
 	return nil
 }
@@ -395,10 +395,6 @@ fileLoop:
 	return nil
 }
 
-func (r *RDBParser) GetData() map[string]string {
+func (r *RDBParser) GetData() map[string]keyval.Value {
 	return r.data
-}
-
-func (r *RDBParser) GetExpiry() map[string]uint64 {
-	return r.expiry
 }
