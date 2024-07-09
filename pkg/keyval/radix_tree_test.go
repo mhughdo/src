@@ -250,13 +250,13 @@ func TestRadixTree_Range(t *testing.T) {
 
 func TestCommonPrefixLength(t *testing.T) {
 	tests := []struct {
-		a, b string
+		a, b []byte
 		want int
 	}{
-		{"1234567890-0", "1234567890-1234", 11},
-		{"1234567890-0", "1234567891-0", 9},
-		{"abc", "abcde", 3},
-		{"abc", "xyz", 0},
+		{[]byte("1234567890-0"), []byte("1234567890-1234"), 11},
+		{[]byte("1234567890-0"), []byte("1234567891-0"), 9},
+		{[]byte("abc"), []byte("abcde"), 3},
+		{[]byte("abc"), []byte("xyz"), 0},
 	}
 
 	for _, tt := range tests {
