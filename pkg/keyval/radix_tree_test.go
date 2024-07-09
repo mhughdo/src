@@ -2,6 +2,7 @@ package keyval
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 )
@@ -281,4 +282,33 @@ func compareStreamEntries(a, b []StreamEntry) bool {
 		}
 	}
 	return true
+}
+func BenchmarkRadixTree_AddEntry(b *testing.B) {
+	tree := NewRadixTree()
+	for i := 0; i < b.N; i++ {
+		id := fmt.Sprintf("%d", i)
+		entry := StreamEntry{ID: id, Fields: map[string]string{"field": "value"}}
+		tree.AddEntry(id, entry)
+	}
+}
+
+func BenchmarkRadixTree_Range(b *testing.B) {
+	tree := NewRadixTree()
+	for i := 0; i < 100000; i++ {
+		id := fmt.Sprintf("%d", i)
+		entry := StreamEntry{ID: id, Fields: map[string]string{"field": "value"}}
+		tree.AddEntry(id, entry)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := rand.Intn(100000)
+		end := start + rand.Intn(1000)
+		startID := fmt.Sprintf("%d", start)
+		endID := fmt.Sprintf("%d", end)
+		_, err := tree.Range(startID, endID, 0, true, true)
+		if err != nil {
+			b.Errorf("Range() error = %v", err)
+		}
+	}
 }

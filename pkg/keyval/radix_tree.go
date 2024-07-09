@@ -1,6 +1,7 @@
 package keyval
 
 import (
+	"bytes"
 	"sort"
 	"sync"
 )
@@ -130,25 +131,25 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 	}
 
 	var result []StreamEntry
-	var traverse func(*RadixNode, string)
+	var traverse func(*RadixNode, []byte)
 
-	traverse = func(node *RadixNode, prefix string) {
+	traverse = func(node *RadixNode, prefix []byte) {
 		if node == nil || (count > 0 && uint64(len(result)) >= count) {
 			return
 		}
 
-		currentID := prefix + string(node.prefix)
+		currentID := append(prefix, node.prefix...)
 		var startCondition, endCondition bool
 		if inclusiveStart {
-			startCondition = currentID >= startID
+			startCondition = bytes.Compare(currentID, []byte(startID)) >= 0
 		} else {
-			startCondition = currentID > startID
+			startCondition = bytes.Compare(currentID, []byte(startID)) > 0
 		}
 
 		if inclusiveEnd {
-			endCondition = currentID <= endID
+			endCondition = bytes.Compare(currentID, []byte(endID)) <= 0
 		} else {
-			endCondition = currentID < endID
+			endCondition = bytes.Compare(currentID, []byte(endID)) < 0
 		}
 
 		if startCondition && endCondition {
@@ -199,7 +200,7 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 		}
 	}
 
-	traverse(t.root, "")
+	traverse(t.root, nil)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].ID < result[j].ID
 	})
