@@ -2,9 +2,14 @@ package keyval
 
 import (
 	"bytes"
-	"sort"
 	"sync"
 )
+
+var entrySlicePool = sync.Pool{
+	New: func() interface{} {
+		return make([]StreamEntry, 0, 100) // Preallocate a slice with an initial capacity
+	},
+}
 
 // StreamEntry represents a single entry in a Redis stream.
 type StreamEntry struct {
@@ -64,13 +69,24 @@ func NewRadixNode(nodeType int, prefix []byte) *RadixNode {
 	var children interface{}
 	switch nodeType {
 	case Node4Type:
-		children = &Node4{}
+		children = &Node4{
+			keys:     [4]byte{},
+			children: [4]*RadixNode{},
+		}
 	case Node16Type:
-		children = &Node16{}
+		children = &Node16{
+			keys:     [16]byte{},
+			children: [16]*RadixNode{},
+		}
 	case Node48Type:
-		children = &Node48{}
+		children = &Node48{
+			keys:     [256]byte{},
+			children: [48]*RadixNode{},
+		}
 	case Node256Type:
-		children = &Node256{}
+		children = &Node256{
+			children: [256]*RadixNode{},
+		}
 	}
 	return &RadixNode{
 		nodeType: nodeType,
@@ -97,8 +113,13 @@ func (t *RadixTree) AddEntry(id string, entry StreamEntry) {
 		if commonPrefixLen == len(node.prefix) {
 			id = id[commonPrefixLen:]
 			if len(id) == 0 {
+				node.mu.Lock()
 				node.isLeaf = true
+				if cap(node.entries) == 0 {
+					node.entries = make([]StreamEntry, 0, 4)
+				}
 				node.entries = append(node.entries, entry)
+				node.mu.Unlock()
 				return
 			}
 
@@ -130,7 +151,9 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 		endID = "\xff" // Arbitrary high value
 	}
 
-	var result []StreamEntry
+	result := entrySlicePool.Get().([]StreamEntry)
+	result = result[:0] // Reset the slice
+
 	var traverse func(*RadixNode, []byte)
 
 	traverse = func(node *RadixNode, prefix []byte) {
@@ -154,6 +177,7 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 
 		if startCondition && endCondition {
 			if node.isLeaf {
+				node.mu.RLock()
 				for _, entry := range node.entries {
 					if inclusiveStart {
 						startCondition = entry.ID >= startID
@@ -168,10 +192,12 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 					if startCondition && endCondition {
 						result = append(result, entry)
 						if count > 0 && uint64(len(result)) >= count {
+							node.mu.RUnlock()
 							return
 						}
 					}
 				}
+				node.mu.RUnlock()
 			}
 		}
 
@@ -201,14 +227,11 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 	}
 
 	traverse(t.root, nil)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].ID < result[j].ID
-	})
-
 	if count > 0 && uint64(len(result)) > count {
 		result = result[:count]
 	}
 
+	entrySlicePool.Put(result[:0])
 	return result, nil
 }
 

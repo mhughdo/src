@@ -303,7 +303,7 @@ func BenchmarkRadixTree_Range(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		start := rand.Intn(100000)
-		end := start + rand.Intn(1000)
+		end := start + rand.Intn(10000)
 		startID := fmt.Sprintf("%d", start)
 		endID := fmt.Sprintf("%d", end)
 		_, err := tree.Range(startID, endID, 0, true, true)
