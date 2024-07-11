@@ -14,6 +14,11 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
 )
 
+type Message struct {
+	Resp   *resp.Resp
+	Client *Client
+}
+
 type Info struct {
 	name       string
 	libName    string
@@ -27,19 +32,20 @@ type Client struct {
 	preferredRespVersion int
 	bw                   *bufio.Writer
 	lastInteraction      time.Time
-	disconnectChan       chan struct{}
-	messageChan          chan *resp.Resp
+	disconnectChan       chan *Client
+	messageChan          chan<- Message
 	Writer               *resp.Writer
+	closed               bool
 	closeOnce            sync.Once
 }
 
-func NewClient(conn net.Conn) *Client {
+func NewClient(conn net.Conn, messageChan chan<- Message) *Client {
 	bw := bufio.NewWriter(conn)
 	return &Client{
 		conn:            conn,
 		lastInteraction: time.Now(),
-		disconnectChan:  make(chan struct{}),
-		messageChan:     make(chan *resp.Resp),
+		disconnectChan:  make(chan *Client),
+		messageChan:     messageChan,
 		bw:              bw,
 		Writer:          resp.NewWriter(bw, resp.DefaultVersion),
 	}
@@ -89,31 +95,34 @@ func (c *Client) GetPreferredRespVersion() int {
 	return c.preferredRespVersion
 }
 
-func (c *Client) DisconnectChan() <-chan struct{} {
-	return c.disconnectChan
-}
-
-func (c *Client) MessageChan() <-chan *resp.Resp {
-	return c.messageChan
-}
-
 func (c *Client) Send() error {
 	return c.Writer.Flush()
 }
 
+func (c *Client) RemoteAddr() string {
+	return c.conn.RemoteAddr().String()
+}
+
+func (c *Client) IsClosed() bool {
+	return c.closed
+}
+
 func (c *Client) Close(ctx context.Context) {
-	c.closeOnce.Do(func() {
-		err := c.conn.Close()
-		if err != nil {
-			logger.Error(ctx, "failed to close connection, err: %v", err)
-		}
-		close(c.disconnectChan)
-		close(c.messageChan)
-	})
+	if c.closed {
+		return
+	}
+	err := c.conn.Close()
+	if err != nil {
+		logger.Error(ctx, "failed to close connection, err: %v", err)
+	}
+	c.closed = true
+	logger.Info(ctx, "connection closed, addr: %s", c.conn.RemoteAddr())
 }
 
 func (c *Client) HandleConnection(ctx context.Context) {
-	defer c.Close(ctx)
+	defer func() {
+		c.disconnectChan <- c
+	}()
 	reader := bufio.NewReader(c.conn)
 	buffer := &bytes.Buffer{}
 
@@ -148,7 +157,7 @@ func (c *Client) HandleConnection(ctx context.Context) {
 			buffer.Reset()
 			continue
 		}
-		c.messageChan <- r
+		c.messageChan <- Message{Resp: r, Client: c}
 		buffer.Reset()
 	}
 }
