@@ -2,22 +2,33 @@ package keyval
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 var entrySlicePool = sync.Pool{
 	New: func() interface{} {
-		return make([]StreamEntry, 0, 100) // Preallocate a slice with an initial capacity
+		return make([]StreamEntry, 0, 100)
 	},
 }
 
-// StreamEntry represents a single entry in a Redis stream.
 type StreamEntry struct {
 	ID     string
-	Fields map[string]string
+	Fields [][]string
 }
 
-// Node types
+type NodeChildren interface {
+	findChild(key byte) *RadixNode
+	addChild(key byte, node *RadixNode) (NodeChildren, bool)
+	getChild(index int) *RadixNode
+	grow() NodeChildren
+	size() int
+}
+
 const (
 	Node4Type = iota
 	Node16Type
@@ -26,88 +37,77 @@ const (
 	MaxPrefixLen = 10
 )
 
-// RadixNode represents a node in a Radix tree.
 type RadixNode struct {
 	nodeType int
 	prefix   []byte
-	children interface{}
+	children NodeChildren
 	isLeaf   bool
-	entries  []StreamEntry // Entries stored in this node if it's a leaf.
+	entries  []StreamEntry
 	mu       sync.RWMutex
 }
 
 type Node4 struct {
 	keys     [4]byte
 	children [4]*RadixNode
-	size     int
+	count    int
 }
 
 type Node16 struct {
 	keys     [16]byte
 	children [16]*RadixNode
-	size     int
+	count    int
 }
 
 type Node48 struct {
 	keys     [256]byte
 	children [48]*RadixNode
-	size     int
+	count    int
 }
 
 type Node256 struct {
 	children [256]*RadixNode
 }
 
-// RadixTree represents the whole Radix tree.
 type RadixTree struct {
-	root *RadixNode
-	mu   sync.RWMutex
+	root          *RadixNode
+	mu            sync.RWMutex
+	size          int
+	lastTimestamp int64
+	sequence      int64
+	lastID        string
 }
 
-// NewRadixNode initializes a new Radix node.
-func NewRadixNode(nodeType int, prefix []byte) *RadixNode {
-	var children interface{}
-	switch nodeType {
-	case Node4Type:
-		children = &Node4{
-			keys:     [4]byte{},
-			children: [4]*RadixNode{},
-		}
-	case Node16Type:
-		children = &Node16{
-			keys:     [16]byte{},
-			children: [16]*RadixNode{},
-		}
-	case Node48Type:
-		children = &Node48{
-			keys:     [256]byte{},
-			children: [48]*RadixNode{},
-		}
-	case Node256Type:
-		children = &Node256{
-			children: [256]*RadixNode{},
-		}
-	}
+func NewRadixNode(prefix []byte) *RadixNode {
 	return &RadixNode{
-		nodeType: nodeType,
 		prefix:   prefix,
-		children: children,
+		children: &Node4{},
+		isLeaf:   false,
+		nodeType: Node4Type,
 	}
 }
 
-// NewRadixTree initializes a new Radix tree.
 func NewRadixTree() *RadixTree {
 	return &RadixTree{
-		root: NewRadixNode(Node4Type, nil),
+		root:          NewRadixNode(nil),
+		size:          0,
+		lastTimestamp: 0,
+		sequence:      0,
+		lastID:        "",
 	}
 }
 
-// AddEntry adds a stream entry to the Radix tree.
-func (t *RadixTree) AddEntry(id string, entry StreamEntry) {
+func (t *RadixTree) AddEntry(originalID string, fields [][]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	entry := StreamEntry{
+		ID:     originalID,
+		Fields: fields,
+	}
+
 	node := t.root
+	id := originalID
+
 	for {
 		commonPrefixLen := commonPrefixLength(node.prefix, []byte(id))
 		if commonPrefixLen == len(node.prefix) {
@@ -120,16 +120,20 @@ func (t *RadixTree) AddEntry(id string, entry StreamEntry) {
 				}
 				node.entries = append(node.entries, entry)
 				node.mu.Unlock()
+				t.size++
+				t.updateLastID(originalID)
 				return
 			}
 
 			c := id[0]
 			child := node.findChild(c)
 			if child == nil {
-				newNode := NewRadixNode(Node4Type, []byte(id))
+				newNode := NewRadixNode([]byte(id))
 				newNode.entries = append(newNode.entries, entry)
 				newNode.isLeaf = true
 				node.addChild(c, newNode)
+				t.size++
+				t.updateLastID(originalID)
 				return
 			}
 			node = child
@@ -139,8 +143,32 @@ func (t *RadixTree) AddEntry(id string, entry StreamEntry) {
 	}
 }
 
-// Range retrieves entries in the Radix tree between startID and endID.
-func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bool, inclusiveEnd bool) ([]StreamEntry, error) {
+func (t *RadixTree) updateLastID(id string) {
+	if id > t.lastID {
+		t.lastID = id
+		parts := strings.Split(id, "-")
+		if len(parts) == 2 {
+			timestamp, err := strconv.ParseInt(parts[0], 10, 64)
+			if err == nil {
+				t.lastTimestamp = timestamp
+				t.sequence, _ = strconv.ParseInt(parts[1], 10, 64)
+			}
+		}
+	}
+}
+
+func (t *RadixTree) Range(startID, endID string, count uint64) ([]StreamEntry, error) {
+	inclusiveStart := true
+	inclusiveEnd := true
+	if strings.HasPrefix(startID, "(") {
+		startID = startID[1:]
+		inclusiveStart = false
+	}
+	if strings.HasPrefix(endID, "(") {
+		endID = endID[1:]
+		inclusiveEnd = false
+	}
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -148,11 +176,11 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 		startID = ""
 	}
 	if endID == "+" {
-		endID = "\xff" // Arbitrary high value
+		endID = "\xff"
 	}
 
 	result := entrySlicePool.Get().([]StreamEntry)
-	result = result[:0] // Reset the slice
+	result = result[:0]
 
 	var traverse func(*RadixNode, []byte)
 
@@ -201,27 +229,10 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 			}
 		}
 
-		switch node.nodeType {
-		case Node4Type:
-			for i := 0; i < node.children.(*Node4).size; i++ {
-				traverse(node.children.(*Node4).children[i], currentID)
-			}
-		case Node16Type:
-			for i := 0; i < node.children.(*Node16).size; i++ {
-				traverse(node.children.(*Node16).children[i], currentID)
-			}
-		case Node48Type:
-			for i := 0; i < 256; i++ {
-				idx := node.children.(*Node48).keys[i]
-				if idx > 0 {
-					traverse(node.children.(*Node48).children[idx-1], currentID)
-				}
-			}
-		case Node256Type:
-			for i := 0; i < 256; i++ {
-				if node.children.(*Node256).children[i] != nil {
-					traverse(node.children.(*Node256).children[i], currentID)
-				}
+		for i := 0; i < node.children.size(); i++ {
+			child := node.children.getChild(i)
+			if child != nil {
+				traverse(child, currentID)
 			}
 		}
 	}
@@ -235,24 +246,19 @@ func (t *RadixTree) Range(startID, endID string, count uint64, inclusiveStart bo
 	return result, nil
 }
 
-// split splits the node at the given position.
 func (n *RadixNode) split(position int) {
-	child := NewRadixNode(Node4Type, n.prefix[position:])
+	child := NewRadixNode(n.prefix[position:])
 	child.children = n.children
 	child.isLeaf = n.isLeaf
 	child.entries = n.entries
 
 	n.prefix = n.prefix[:position]
-	n.children = &Node4{
-		keys:     [4]byte{child.prefix[0]},
-		children: [4]*RadixNode{child},
-		size:     1,
-	}
+	n.children = &Node4{}
+	n.addChild(child.prefix[0], child)
 	n.isLeaf = false
 	n.entries = nil
 }
 
-// commonPrefixLength returns the length of the common prefix between two byte slices.
 func commonPrefixLength(a, b []byte) int {
 	minLen := len(a)
 	if len(b) < minLen {
@@ -266,102 +272,329 @@ func commonPrefixLength(a, b []byte) int {
 	return minLen
 }
 
-// findChild finds the child node associated with the given key.
 func (n *RadixNode) findChild(key byte) *RadixNode {
-	switch n.nodeType {
-	case Node4Type:
-		for i := 0; i < n.children.(*Node4).size; i++ {
-			if n.children.(*Node4).keys[i] == key {
-				return n.children.(*Node4).children[i]
+	return n.children.findChild(key)
+}
+
+func (n *RadixNode) addChild(key byte, child *RadixNode) {
+	newChildren, _ := n.children.addChild(key, child)
+	n.children = newChildren
+}
+
+func (n *RadixNode) grow() {
+	newChildren, grew := n.children.addChild(0, nil)
+	if grew {
+		n.children = newChildren
+		switch newChildren.(type) {
+		case *Node16:
+			n.nodeType = Node16Type
+		case *Node48:
+			n.nodeType = Node48Type
+		case *Node256:
+			n.nodeType = Node256Type
+		}
+	}
+}
+
+func (t *RadixTree) GenerateID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	currentTime := time.Now().UnixMilli()
+	if currentTime <= t.lastTimestamp {
+		t.sequence++
+	} else {
+		t.lastTimestamp = currentTime
+		t.sequence = 0
+	}
+
+	return fmt.Sprintf("%d-%d", t.lastTimestamp, t.sequence)
+}
+
+func (t *RadixTree) GenerateIncompleteID(incompleteID string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	parts := strings.Split(incompleteID, "-")
+	if len(parts) != 2 || parts[1] != "*" {
+		return "", errors.New("ERR Invalid stream ID")
+	}
+
+	timestamp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return "", errors.New("ERR Invalid stream ID")
+	}
+
+	if timestamp < t.lastTimestamp {
+		timestamp = t.lastTimestamp
+	}
+
+	if timestamp == t.lastTimestamp {
+		t.sequence++
+	} else {
+		t.lastTimestamp = timestamp
+		t.sequence = 0
+	}
+
+	return fmt.Sprintf("%d-%d", t.lastTimestamp, t.sequence), nil
+}
+
+func (t *RadixTree) ValidateID(id string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.lastID == "" {
+		return true
+	}
+
+	return id > t.lastID
+}
+
+func (t *RadixTree) TrimBySize(maxSize int) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.size <= maxSize {
+		return 0
+	}
+
+	trimmed := 0
+	var traverse func(*RadixNode) bool
+	traverse = func(node *RadixNode) bool {
+		if node == nil {
+			return false
+		}
+
+		if node.isLeaf {
+			node.mu.Lock()
+			for len(node.entries) > 0 && t.size > maxSize {
+				node.entries = node.entries[1:]
+				t.size--
+				trimmed++
+			}
+			node.mu.Unlock()
+			return t.size <= maxSize
+		}
+
+		for i := 0; i < node.children.size(); i++ {
+			child := node.children.getChild(i)
+			if child != nil {
+				if traverse(child) {
+					return true
+				}
 			}
 		}
-	case Node16Type:
-		for i := 0; i < n.children.(*Node16).size; i++ {
-			if n.children.(*Node16).keys[i] == key {
-				return n.children.(*Node16).children[i]
+		return false
+	}
+
+	traverse(t.root)
+	return trimmed
+}
+
+func (t *RadixTree) TrimByMinID(minID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	trimmed := 0
+	var traverse func(*RadixNode) bool
+	traverse = func(node *RadixNode) bool {
+		if node == nil {
+			return false
+		}
+
+		if node.isLeaf {
+			node.mu.Lock()
+			initialLen := len(node.entries)
+			for i, entry := range node.entries {
+				if entry.ID >= minID {
+					node.entries = node.entries[i:]
+					trimmed += i
+					t.size -= i
+					node.mu.Unlock()
+					return true
+				}
+			}
+			trimmed += initialLen
+			t.size -= initialLen
+			node.entries = nil
+			node.mu.Unlock()
+			return false
+		}
+
+		for i := 0; i < node.children.size(); i++ {
+			child := node.children.getChild(i)
+			if child != nil {
+				if traverse(child) {
+					return true
+				}
 			}
 		}
-	case Node48Type:
-		idx := n.children.(*Node48).keys[key]
-		if idx > 0 {
-			return n.children.(*Node48).children[idx-1]
+		return false
+	}
+
+	traverse(t.root)
+	return trimmed
+}
+
+func (n *Node4) findChild(key byte) *RadixNode {
+	for i := 0; i < n.count; i++ {
+		if n.keys[i] == key {
+			return n.children[i]
 		}
-	case Node256Type:
-		return n.children.(*Node256).children[key]
 	}
 	return nil
 }
 
-// addChild adds a child node to the current node.
-func (n *RadixNode) addChild(key byte, node *RadixNode) {
-	switch n.nodeType {
-	case Node4Type:
-		children := n.children.(*Node4)
-		if children.size < 4 {
-			children.keys[children.size] = key
-			children.children[children.size] = node
-			children.size++
-		} else {
-			n.grow()
-			n.addChild(key, node)
-		}
-	case Node16Type:
-		children := n.children.(*Node16)
-		if children.size < 16 {
-			children.keys[children.size] = key
-			children.children[children.size] = node
-			children.size++
-		} else {
-			n.grow()
-			n.addChild(key, node)
-		}
-	case Node48Type:
-		children := n.children.(*Node48)
-		if children.size < 48 {
-			idx := children.size
-			children.keys[key] = byte(idx + 1)
-			children.children[idx] = node
-			children.size++
-		} else {
-			n.grow()
-			n.addChild(key, node)
-		}
-	case Node256Type:
-		children := n.children.(*Node256)
-		children.children[key] = node
+func (n *Node4) addChild(key byte, node *RadixNode) (NodeChildren, bool) {
+	if n.count < 4 {
+		n.keys[n.count] = key
+		n.children[n.count] = node
+		n.count++
+		return n, false
 	}
+	newNode := n.grow()
+	newNode, _ = newNode.addChild(key, node)
+	return newNode, true
 }
 
-// grow grows the node to a larger type.
-func (n *RadixNode) grow() {
-	switch n.nodeType {
-	case Node4Type:
-		newNode := &Node16{}
-		oldNode := n.children.(*Node4)
-		copy(newNode.keys[:], oldNode.keys[:])
-		copy(newNode.children[:], oldNode.children[:])
-		newNode.size = oldNode.size
-		n.children = newNode
-		n.nodeType = Node16Type
-	case Node16Type:
-		newNode := &Node48{}
-		oldNode := n.children.(*Node16)
-		for i := 0; i < oldNode.size; i++ {
-			newNode.keys[oldNode.keys[i]] = byte(i + 1)
-			newNode.children[i] = oldNode.children[i]
+func (n *Node4) size() int {
+	return n.count
+}
+
+func (n *Node16) findChild(key byte) *RadixNode {
+	for i := 0; i < n.count; i++ {
+		if n.keys[i] == key {
+			return n.children[i]
 		}
-		newNode.size = oldNode.size
-		n.children = newNode
-		n.nodeType = Node48Type
-	case Node48Type:
-		newNode := &Node256{}
-		oldNode := n.children.(*Node48)
-		for i := 0; i < 256; i++ {
-			if oldNode.keys[i] > 0 {
-				newNode.children[i] = oldNode.children[oldNode.keys[i]-1]
-			}
-		}
-		n.children = newNode
-		n.nodeType = Node256Type
 	}
+	return nil
+}
+
+func (n *Node16) addChild(key byte, node *RadixNode) (NodeChildren, bool) {
+	if n.count < 16 {
+		n.keys[n.count] = key
+		n.children[n.count] = node
+		n.count++
+		return n, false
+	}
+	newNode := n.grow()
+	newNode, _ = newNode.addChild(key, node)
+	return newNode, true
+}
+
+func (n *Node16) size() int {
+	return n.count
+}
+
+func (n *Node48) findChild(key byte) *RadixNode {
+	idx := n.keys[key]
+	if idx > 0 {
+		return n.children[idx-1]
+	}
+	return nil
+}
+
+func (n *Node48) addChild(key byte, node *RadixNode) (NodeChildren, bool) {
+	if n.count < 48 {
+		idx := n.count
+		n.keys[key] = byte(idx + 1)
+		n.children[idx] = node
+		n.count++
+		return n, false
+	}
+	newNode := n.grow()
+	newNode, _ = newNode.addChild(key, node)
+	return newNode, true
+}
+
+func (n *Node48) size() int {
+	return n.count
+}
+
+func (n *Node256) findChild(key byte) *RadixNode {
+	return n.children[key]
+}
+
+func (n *Node256) addChild(key byte, node *RadixNode) (NodeChildren, bool) {
+	n.children[key] = node
+	return n, false
+}
+
+func (n *Node256) size() int {
+	count := 0
+	for i := 0; i < 256; i++ {
+		if n.children[i] != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func (n *Node4) grow() NodeChildren {
+	new := &Node16{count: n.count}
+	copy(new.keys[:], n.keys[:])
+	copy(new.children[:], n.children[:])
+	return new
+}
+
+func (n *Node16) grow() NodeChildren {
+	new := &Node48{count: n.count}
+	for i := 0; i < n.count; i++ {
+		new.keys[n.keys[i]] = byte(i + 1)
+		new.children[i] = n.children[i]
+	}
+	return new
+}
+
+func (n *Node48) grow() NodeChildren {
+	new := &Node256{}
+	for i := 0; i < 256; i++ {
+		if n.keys[i] != 0 {
+			new.children[i] = n.children[n.keys[i]-1]
+		}
+	}
+	return new
+}
+
+func (n *Node256) grow() NodeChildren {
+	return n
+}
+
+func (n *Node4) getChild(index int) *RadixNode {
+	if index < 0 || index >= n.count {
+		return nil
+	}
+	return n.children[index]
+}
+
+func (n *Node16) getChild(index int) *RadixNode {
+	if index < 0 || index >= n.count {
+		return nil
+	}
+	return n.children[index]
+}
+
+func (n *Node48) getChild(index int) *RadixNode {
+	if index < 0 || index >= n.count {
+		return nil
+	}
+	for i := 0; i < 256; i++ {
+		if n.keys[i] == byte(index+1) {
+			return n.children[index]
+		}
+	}
+	return nil
+}
+
+func (n *Node256) getChild(index int) *RadixNode {
+	count := 0
+	for i := 0; i < 256; i++ {
+		if n.children[i] != nil {
+			if count == index {
+				return n.children[i]
+			}
+			count++
+		}
+	}
+	return nil
 }
