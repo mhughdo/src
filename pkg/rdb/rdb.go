@@ -93,10 +93,10 @@ func (p *RDBParser) readLength() (length uint64, special bool, err error) {
 	return 0, false, fmt.Errorf("invalid length encoding: %d", encType)
 }
 
-func (p *RDBParser) readString() (string, error) {
+func (p *RDBParser) readValueAsBytes() ([]byte, error) {
 	length, special, err := p.readLength()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if special {
 		// 0 indicates that an 8 bit integer follows
@@ -106,21 +106,21 @@ func (p *RDBParser) readString() (string, error) {
 		case 0:
 			b, err := p.readByte()
 			if err != nil {
-				return "", fmt.Errorf("failed to read 8 bit integer: %w", err)
+				return nil, fmt.Errorf("failed to read 8 bit integer: %w", err)
 			}
-			return fmt.Sprintf("%d", b), nil
+			return []byte{b}, nil
 		case 1:
 			bb, err := p.readBytes(2)
 			if err != nil {
-				return "", fmt.Errorf("failed to read 16 bit integer: %w", err)
+				return nil, fmt.Errorf("failed to read 16 bit integer: %w", err)
 			}
-			return fmt.Sprintf("%d", binary.LittleEndian.Uint16(bb)), nil
+			return bb, nil
 		case 2:
 			bb, err := p.readBytes(4)
 			if err != nil {
-				return "", fmt.Errorf("failed to read 32 bit integer: %w", err)
+				return nil, fmt.Errorf("failed to read 32 bit integer: %w", err)
 			}
-			return fmt.Sprintf("%d", binary.LittleEndian.Uint32(bb)), nil
+			return bb, nil
 		case 3:
 			//  If the value of those 6 bits is 3, it indicates that a compressed string follows.
 			// The compressed string is read as follows:
@@ -130,31 +130,39 @@ func (p *RDBParser) readString() (string, error) {
 			// Finally, these bytes are decompressed using LZF algorithm
 			compressedLength, _, err := p.readLength()
 			if err != nil {
-				return "", fmt.Errorf("failed to read compressed length: %w", err)
+				return nil, fmt.Errorf("failed to read compressed length: %w", err)
 			}
 			_, _, err = p.readLength()
 			if err != nil {
-				return "", fmt.Errorf("failed to read uncompressed length: %w", err)
+				return nil, fmt.Errorf("failed to read uncompressed length: %w", err)
 			}
 			compressed, err := p.readBytes(int(compressedLength))
 			if err != nil {
-				return "", fmt.Errorf("failed to read compressed data: %w", err)
+				return nil, fmt.Errorf("failed to read compressed data: %w", err)
 			}
 			decompressed := make([]byte, int(compressedLength))
 			_, err = lzf.Decompress(compressed, decompressed)
 			if err != nil {
-				return "", fmt.Errorf("failed to decompress data: %w", err)
+				return nil, fmt.Errorf("failed to decompress data: %w", err)
 			}
-			return string(decompressed), nil
+			return decompressed, nil
 		default:
-			return "", fmt.Errorf("unsupported special string encoding: %d", length)
+			return nil, fmt.Errorf("unsupported special string encoding: %d", length)
 		}
 	}
 	b, err := p.readBytes(int(length))
 	if err != nil {
-		return "", fmt.Errorf("failed to read string: %w", err)
+		return nil, fmt.Errorf("failed to read string: %w", err)
 	}
-	return string(b), nil
+	return b, nil
+}
+
+func (p *RDBParser) readString() (string, error) {
+	bytes, err := p.readValueAsBytes()
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 func (p *RDBParser) readHeader() error {
@@ -251,7 +259,7 @@ func (p *RDBParser) handleObject(objType byte, expiry uint64) error {
 	if err != nil {
 		return err
 	}
-	value, err := p.readString()
+	bytes, err := p.readValueAsBytes()
 	if err != nil {
 		return err
 	}
@@ -260,7 +268,7 @@ func (p *RDBParser) handleObject(objType byte, expiry uint64) error {
 	}
 	p.data[key] = keyval.Value{
 		Type:   keyval.ValueTypeString,
-		Data:   value,
+		Data:   bytes,
 		Expiry: expiry,
 	}
 	return nil

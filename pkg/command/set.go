@@ -125,7 +125,7 @@ func (s *Set) parseOptions(args []*resp.Resp) (*SetOptions, error) {
 				return nil, errors.New("missing value for EX option")
 			}
 			i++
-			seconds, err := args[i].Int()
+			seconds, err := args[i].Int64()
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for EX option: %w", err)
 			}
@@ -135,7 +135,7 @@ func (s *Set) parseOptions(args []*resp.Resp) (*SetOptions, error) {
 				return nil, errors.New("missing value for PX option")
 			}
 			i++
-			milliseconds, err := args[i].Int()
+			milliseconds, err := args[i].Int64()
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for PX option: %w", err)
 			}
@@ -145,7 +145,7 @@ func (s *Set) parseOptions(args []*resp.Resp) (*SetOptions, error) {
 				return nil, errors.New("missing value for EXAT option")
 			}
 			i++
-			seconds, err := args[i].Int()
+			seconds, err := args[i].Int64()
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for EXAT option: %w", err)
 			}
@@ -155,7 +155,7 @@ func (s *Set) parseOptions(args []*resp.Resp) (*SetOptions, error) {
 				return nil, errors.New("missing value for PXAT option")
 			}
 			i++
-			milliseconds, err := args[i].Int()
+			milliseconds, err := args[i].Int64()
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for PXAT option: %w", err)
 			}

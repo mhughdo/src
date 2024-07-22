@@ -1,6 +1,7 @@
 package keyval
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -16,6 +17,26 @@ const (
 	ValueTypeStream
 	ValueTypeJSON
 )
+
+func (t ValueType) String() string {
+	switch t {
+	case ValueTypeString:
+		return "string"
+	case ValueTypeList:
+		return "list"
+	case ValueTypeHash:
+		return "hash"
+	case ValueTypeSet:
+		return "set"
+	case ValueTypeSortedSet:
+		return "sortedset"
+	case ValueTypeStream:
+		return "stream"
+	case ValueTypeJSON:
+		return "json"
+	}
+	return "unknown"
+}
 
 type Value struct {
 	Type   ValueType
@@ -34,6 +55,8 @@ type KV interface {
 	Exists(key string) bool
 	DeleteTTL(key string)
 	Keys() []string
+	Type(key string) string
+	GetStream(key string, createIfNotExists bool) (*Stream, error)
 }
 
 type kv struct {
@@ -59,6 +82,16 @@ func (kv *kv) Get(key string) []byte {
 		return nil
 	}
 	return v.Data.([]byte)
+}
+
+func (kv *kv) Type(key string) string {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+	elem, found := kv.store[key]
+	if !found {
+		return "none"
+	}
+	return elem.Type.String()
 }
 
 func (kv *kv) Set(key string, value []byte) error {
@@ -134,4 +167,24 @@ func (kv *kv) DeleteTTL(key string) {
 		v.Expiry = 0
 		kv.store[key] = v
 	}
+}
+
+func (kv *kv) GetStream(key string, createIfNotExist bool) (*Stream, error) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	s, found := kv.store[key]
+	if !found {
+		if !createIfNotExist {
+			return nil, nil
+		}
+		kv.store[key] = Value{
+			Type: ValueTypeStream,
+			Data: NewStream(),
+		}
+		return kv.store[key].Data.(*Stream), nil
+	}
+	if s.Type != ValueTypeStream {
+		return nil, errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	return s.Data.(*Stream), nil
 }

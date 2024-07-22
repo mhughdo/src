@@ -324,6 +324,9 @@ func (t *RadixTree) GenerateIncompleteID(incompleteID string) (string, error) {
 	if err != nil {
 		return "", errors.New("ERR Invalid stream ID")
 	}
+	if timestamp < 0 {
+		return "", errors.New("ERR Invalid stream ID")
+	}
 
 	if timestamp < t.lastTimestamp {
 		timestamp = t.lastTimestamp
@@ -342,6 +345,26 @@ func (t *RadixTree) GenerateIncompleteID(incompleteID string) (string, error) {
 func (t *RadixTree) ValidateID(id string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	parts := strings.Split(id, "-")
+	if len(parts) > 2 {
+		return false
+	}
+	timestamp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return false
+	}
+	if timestamp < 0 {
+		return false
+	}
+	if len(parts) == 2 {
+		sequence, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return false
+		}
+		if sequence < 0 {
+			return false
+		}
+	}
 
 	if t.lastID == "" {
 		return true
