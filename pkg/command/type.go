@@ -18,10 +18,6 @@ func (t *TypeCmd) Execute(_ *client.Client, wr *resp.Writer, args []*resp.Resp) 
 	}
 
 	key := args[0].String()
-	val := t.kv.Get(key)
-	if val == nil {
-		return wr.WriteSimpleValue(resp.SimpleString, []byte("none"))
-	}
 
-	return wr.WriteSimpleValue(resp.SimpleString, []byte("string"))
+	return wr.WriteSimpleValue(resp.SimpleString, []byte(t.kv.Type(key)))
 }

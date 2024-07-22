@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
@@ -21,24 +23,28 @@ const (
 )
 
 type Server struct {
-	ln       net.Listener
-	mu       sync.Mutex
-	cfg      *config.Config
-	done     chan struct{}
-	store    keyval.KV
-	clients  map[*client.Client]struct{}
-	cFactory *command.CommandFactory
+	ln             net.Listener
+	mu             sync.Mutex
+	cfg            *config.Config
+	done           chan struct{}
+	store          keyval.KV
+	clients        map[*client.Client]struct{}
+	cFactory       *command.CommandFactory
+	messageChan    chan client.Message
+	disconnectChan chan *client.Client
 }
 
 func NewServer(cfg *config.Config) *Server {
 	store := keyval.NewStore()
 	return &Server{
-		mu:       sync.Mutex{},
-		cfg:      cfg,
-		done:     make(chan struct{}),
-		store:    store,
-		cFactory: command.NewCommandFactory(store, cfg),
-		clients:  make(map[*client.Client]struct{}),
+		mu:             sync.Mutex{},
+		cfg:            cfg,
+		done:           make(chan struct{}),
+		store:          store,
+		cFactory:       command.NewCommandFactory(store, cfg),
+		clients:        make(map[*client.Client]struct{}),
+		messageChan:    make(chan client.Message),
+		disconnectChan: make(chan *client.Client),
 	}
 }
 
@@ -67,7 +73,7 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := rdb.ParseRDB(ctx); err != nil {
 			return fmt.Errorf("failed to parse rdb, err: %v", err)
 		}
-		s.store.RestoreRDB(rdb.GetData(), rdb.GetExpiry())
+		s.store.RestoreRDB(rdb.GetData())
 	}
 	if err := s.Listen(ctx); err != nil {
 		return fmt.Errorf("failed to listen, err: %v", err)
@@ -86,10 +92,11 @@ func (s *Server) Listen(ctx context.Context) error {
 	}
 	s.ln = ln
 	logger.Info(ctx, "Ready to accept connections tcp on %s", listenAddr)
-	return s.loop(ctx)
+	go s.loop(ctx)
+	return s.acceptConnection(ctx)
 }
 
-func (s *Server) loop(ctx context.Context) error {
+func (s *Server) acceptConnection(ctx context.Context) error {
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
@@ -100,41 +107,45 @@ func (s *Server) loop(ctx context.Context) error {
 				return fmt.Errorf("failed to accept connection: %w", err)
 			}
 		}
-		cl := client.NewClient(conn)
+		cl := client.NewClient(conn, s.messageChan)
 		s.mu.Lock()
 		s.clients[cl] = struct{}{}
 		s.mu.Unlock()
-		ctx := context.WithValue(ctx, logger.RemoteAddrKey, conn.RemoteAddr())
-		go s.handleClient(ctx, cl)
+		go cl.HandleConnection(ctx)
 	}
 }
 
-func (s *Server) handleClient(ctx context.Context, cl *client.Client) {
-	defer func(c *client.Client) {
-		s.mu.Lock()
-		delete(s.clients, c)
-		s.mu.Unlock()
-		cl.Close(ctx)
-	}(cl)
-
-	go cl.HandleConnection(ctx)
-
+func (s *Server) loop(ctx context.Context) {
 	for {
 		select {
-		case <-cl.DisconnectChan():
+		case <-s.done:
 			return
-		case msg := <-cl.MessageChan():
-			err := s.handleMessage(ctx, cl, msg)
+		case cl := <-s.disconnectChan:
+			s.closeClient(ctx, cl)
+		case msg := <-s.messageChan:
+			ctx := context.WithValue(ctx, logger.RemoteAddrKey, msg.Client.RemoteAddr())
+			err := s.handleMessage(ctx, msg.Client, msg.Resp)
 			if err != nil {
 				logger.Error(ctx, "failed to handle message, err: %v", err)
+				if strings.Contains(err.Error(), "failed to write error:") {
+					s.closeClient(ctx, msg.Client)
+					continue
+				}
 			}
-			err = cl.Send()
+			err = msg.Client.Send()
 			if err != nil {
 				logger.Error(ctx, "failed to send message, err: %v", err)
-				return
+				s.closeClient(ctx, msg.Client)
 			}
 		}
 	}
+}
+
+func (s *Server) closeClient(ctx context.Context, cl *client.Client) {
+	s.mu.Lock()
+	delete(s.clients, cl)
+	s.mu.Unlock()
+	cl.Close(ctx)
 }
 
 func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.Resp) error {
@@ -146,7 +157,7 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	if err != nil {
 		writeErr := cl.Writer.WriteError(err)
 		if writeErr != nil {
-			return fmt.Errorf("failed to write error: %v, err: %w", writeErr, err)
+			return errors.Join(err, fmt.Errorf("failed to write error: %v", writeErr))
 		}
 		return err
 	}
@@ -155,7 +166,7 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 		cl.Writer.Reset()
 		writeErr := cl.Writer.WriteError(err)
 		if writeErr != nil {
-			return fmt.Errorf("failed to write error: %v, err: %w", writeErr, err)
+			return errors.Join(err, fmt.Errorf("failed to write error: %v", writeErr))
 		}
 		return err
 	}

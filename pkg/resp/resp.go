@@ -84,7 +84,7 @@ func (r *Resp) Bytes() []byte {
 	}
 }
 
-func (r *Resp) Int() (int64, error) {
+func (r *Resp) Int64() (int64, error) {
 	switch val := r.Data.(type) {
 	case []byte:
 		i, err := strconv.ParseInt(string(val), 10, 64)
@@ -97,7 +97,7 @@ func (r *Resp) Int() (int64, error) {
 	}
 }
 
-func (r *Resp) Uint() (uint64, error) {
+func (r *Resp) Uint64() (uint64, error) {
 	switch val := r.Data.(type) {
 	case []byte:
 		i, err := strconv.ParseUint(string(val), 10, 64)
@@ -110,7 +110,7 @@ func (r *Resp) Uint() (uint64, error) {
 	}
 }
 
-func (r *Resp) Float() (float64, error) {
+func (r *Resp) Float64() (float64, error) {
 	switch val := r.Data.(type) {
 	case []byte:
 		f, err := strconv.ParseFloat(string(val), 64)

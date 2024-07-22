@@ -22,7 +22,7 @@ type Hello struct {
 func (h *Hello) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error {
 	protover := resp.DefaultVersion
 	if len(args) > 0 {
-		pv, err := args[0].Int()
+		pv, err := args[0].Int64()
 		if err != nil {
 			return wr.WriteError(errors.New("invalid protocol version"))
 		}
