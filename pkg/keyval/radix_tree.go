@@ -12,7 +12,7 @@ import (
 
 var entrySlicePool = sync.Pool{
 	New: func() interface{} {
-		return make([]StreamEntry, 0, 100)
+		return &[]StreamEntry{}
 	},
 }
 
@@ -179,7 +179,8 @@ func (t *RadixTree) Range(startID, endID string, count uint64) ([]StreamEntry, e
 		endID = "\xff"
 	}
 
-	result := entrySlicePool.Get().([]StreamEntry)
+	resultPtr := entrySlicePool.Get().(*[]StreamEntry)
+	result := *resultPtr
 	result = result[:0]
 
 	var traverse func(*RadixNode, []byte)
@@ -242,7 +243,8 @@ func (t *RadixTree) Range(startID, endID string, count uint64) ([]StreamEntry, e
 		result = result[:count]
 	}
 
-	entrySlicePool.Put(result[:0])
+	*resultPtr = result[:0]
+	entrySlicePool.Put(resultPtr)
 	return result, nil
 }
 
@@ -279,21 +281,6 @@ func (n *RadixNode) findChild(key byte) *RadixNode {
 func (n *RadixNode) addChild(key byte, child *RadixNode) {
 	newChildren, _ := n.children.addChild(key, child)
 	n.children = newChildren
-}
-
-func (n *RadixNode) grow() {
-	newChildren, grew := n.children.addChild(0, nil)
-	if grew {
-		n.children = newChildren
-		switch newChildren.(type) {
-		case *Node16:
-			n.nodeType = Node16Type
-		case *Node48:
-			n.nodeType = Node48Type
-		case *Node256:
-			n.nodeType = Node256Type
-		}
-	}
 }
 
 func (t *RadixTree) GenerateID() string {

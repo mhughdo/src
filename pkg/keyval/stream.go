@@ -6,9 +6,7 @@ import (
 )
 
 type Stream struct {
-	tree          *RadixTree
-	lastTimestamp int64
-	sequence      int64
+	tree *RadixTree
 }
 
 func NewStream() *Stream {

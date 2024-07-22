@@ -433,14 +433,6 @@ func incrementSequence(seq string) string {
 	return strconv.FormatInt(i+1, 10)
 }
 
-func parseInt64(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
-}
-
-func formatInt64(i int64) string {
-	return strconv.FormatInt(i, 10)
-}
-
 func generateLargeDataset(size int) []StreamEntry {
 	entries := make([]StreamEntry, size)
 	baseTimestamp := time.Now().UnixMilli()

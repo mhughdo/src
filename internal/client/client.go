@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
@@ -36,7 +35,6 @@ type Client struct {
 	messageChan          chan<- Message
 	Writer               *resp.Writer
 	closed               bool
-	closeOnce            sync.Once
 }
 
 func NewClient(conn net.Conn, messageChan chan<- Message) *Client {

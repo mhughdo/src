@@ -23,45 +23,45 @@ func TestRDBParser(t *testing.T) {
 			want: map[string]keyval.Value{
 				"double": {
 					Type: keyval.ValueTypeString,
-					Data: "3.1456789",
+					Data: []byte("3.1456789"),
 				},
 				"str": {
 					Type: keyval.ValueTypeString,
-					Data: "thisisastring",
+					Data: []byte("thisisastring"),
 				},
 				"emptystr": {
 					Type: keyval.ValueTypeString,
-					Data: "",
+					Data: []byte(""),
 				},
 				"int64": {
 					Type: keyval.ValueTypeString,
-					Data: "-9223372036854775808",
+					Data: []byte("-9223372036854775808"),
 				},
 				"int": {
 					Type: keyval.ValueTypeString,
-					Data: "1000",
+					Data: []byte("1000"),
 				},
 				"boolean": {
 					Type: keyval.ValueTypeString,
-					Data: "true",
+					Data: []byte("true"),
 				},
 				"bignumber": {
 					Type: keyval.ValueTypeString,
-					Data: "734589327589437589324758943278954389",
+					Data: []byte("734589327589437589324758943278954389"),
 				},
 				"strwithexpire": {
 					Type:   keyval.ValueTypeString,
-					Data:   "not_expired",
+					Data:   []byte("not_expired"),
 					Expiry: 11719245191989,
 				},
 				"strwithPX": {
 					Type:   keyval.ValueTypeString,
-					Data:   "not_expired_with_PX",
+					Data:   []byte("not_expired_with_PX"),
 					Expiry: 101719245280555,
 				},
 				"uint64": {
 					Type: keyval.ValueTypeString,
-					Data: "18446744073709551615",
+					Data: []byte("18446744073709551615"),
 				},
 			},
 		},
