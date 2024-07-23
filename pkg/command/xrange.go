@@ -74,9 +74,6 @@ func (x *XRange) parseArgs(args []*resp.Resp) (start, end string, count uint64, 
 		if err != nil {
 			return
 		}
-		if count < 0 {
-			count = 0
-		}
 	}
 	return
 }
