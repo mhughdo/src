@@ -37,7 +37,7 @@ func (s *Stream) AddEntry(entry StreamEntry) (string, error) {
 	return entry.ID, nil
 }
 
-func (s *Stream) Range(startID, endID string, count uint64) ([]StreamEntry, error) {
+func (s *Stream) Range(startID, endID string, count uint64) []StreamEntry {
 	return s.tree.Range(startID, endID, count)
 }
 

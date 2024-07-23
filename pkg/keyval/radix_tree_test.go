@@ -75,7 +75,6 @@ func TestRadixTree_Range(t *testing.T) {
 			endID:       "+",
 			wantEntries: nil,
 			count:       0,
-			wantErr:     false,
 		},
 		{
 			name: "Range with one entry",
@@ -88,7 +87,6 @@ func TestRadixTree_Range(t *testing.T) {
 			wantEntries: []StreamEntry{
 				{ID: "1234567890-0", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Range with multiple entries",
@@ -109,7 +107,6 @@ func TestRadixTree_Range(t *testing.T) {
 				{ID: "1234567891-1", Fields: [][]string{{"field1", "value1"}}},
 				{ID: "1234567892-0", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Range with multiple small entries",
@@ -151,7 +148,6 @@ func TestRadixTree_Range(t *testing.T) {
 				{ID: "1234567891-0", Fields: [][]string{{"field1", "value1"}}},
 				{ID: "1234567891-1", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Range with limit",
@@ -169,7 +165,6 @@ func TestRadixTree_Range(t *testing.T) {
 				{ID: "1234567890-1", Fields: [][]string{{"field1", "value1"}}},
 				{ID: "1234567891-0", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Exclusive Range",
@@ -187,7 +182,6 @@ func TestRadixTree_Range(t *testing.T) {
 				{ID: "1234567891-1", Fields: [][]string{{"field1", "value1"}}},
 				{ID: "1234567892-0", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Exclusive Range on both sides",
@@ -204,7 +198,6 @@ func TestRadixTree_Range(t *testing.T) {
 				{ID: "1234567891-0", Fields: [][]string{{"field1", "value1"}}},
 				{ID: "1234567891-1", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Exclusive Range on both sides with limit",
@@ -220,7 +213,6 @@ func TestRadixTree_Range(t *testing.T) {
 			wantEntries: []StreamEntry{
 				{ID: "1234567891-0", Fields: [][]string{{"field1", "value1"}}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Range with no matching entries",
@@ -233,7 +225,6 @@ func TestRadixTree_Range(t *testing.T) {
 			endID:       "1234567891-1",
 			count:       0,
 			wantEntries: nil,
-			wantErr:     false,
 		},
 	}
 
@@ -244,11 +235,8 @@ func TestRadixTree_Range(t *testing.T) {
 				tree.AddEntry(entry.ID, entry.Fields)
 			}
 
-			gotEntries, err := tree.Range(tt.startID, tt.endID, tt.count)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Range() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			gotEntries := tree.Range(tt.startID, tt.endID, tt.count)
+
 			if !compareStreamEntries(gotEntries, tt.wantEntries) {
 				t.Errorf("Range() gotEntries = %v, want %v", gotEntries, tt.wantEntries)
 			}
@@ -314,10 +302,7 @@ func BenchmarkRadixTree_Range(b *testing.B) {
 		end := start + rand.Intn(10000)
 		startID := fmt.Sprintf("%d", start)
 		endID := fmt.Sprintf("%d", end)
-		_, err := tree.Range(startID, endID, 0)
-		if err != nil {
-			b.Errorf("Range() error = %v", err)
-		}
+		tree.Range(startID, endID, 0)
 	}
 }
 
@@ -485,7 +470,7 @@ func TestTrimBySize(t *testing.T) {
 				t.Errorf("TrimBySize(%d) returned %d, want %d", tt.maxSize, trimmed, tt.datasetSize-tt.expectedSize)
 			}
 
-			entries, _ := tree.Range("-", "+", uint64(tree.size))
+			entries := tree.Range("-", "+", uint64(tree.size))
 			if len(entries) != tt.expectedSize {
 				t.Errorf("Range returned %d entries, want %d", len(entries), tt.expectedSize)
 			}
@@ -546,7 +531,7 @@ func TestTrimByMinID(t *testing.T) {
 				t.Errorf("TrimByMinID(%s) returned %d, want %d", minID, trimmed, expectedTrimmed)
 			}
 
-			entries, _ := tree.Range("-", "+", uint64(tree.size))
+			entries := tree.Range("-", "+", uint64(tree.size))
 			if len(entries) != expectedSize {
 				t.Errorf("Range returned %d entries, want %d", len(entries), expectedSize)
 			}
@@ -660,10 +645,7 @@ func TestTrimByMinIDExplicit(t *testing.T) {
 				t.Errorf("TrimByMinID(%s) returned %d, want %d", tt.minID, trimmed, tt.expectedTrimmed)
 			}
 
-			entries, err := tree.Range("-", "+", uint64(len(tt.entries)))
-			if err != nil {
-				t.Fatalf("Failed to get range: %v", err)
-			}
+			entries := tree.Range("-", "+", uint64(len(tt.entries)))
 
 			if len(entries) != len(tt.expectedRemaining) {
 				t.Errorf("Range returned %d entries, want %d", len(entries), len(tt.expectedRemaining))
