@@ -300,21 +300,6 @@ func (w *Writer) WriteStringSlice(v []string) error {
 	return nil
 }
 
-func (w *Writer) WriteNestedStringSlice(v [][]string) error {
-	if err := w.WriteByte(Array); err != nil {
-		return err
-	}
-	if err := w.writeLen(len(v)); err != nil {
-		return err
-	}
-	for i := range v {
-		if err := w.WriteStringSlice(v[i]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (w *Writer) WriteSlice(v any) error {
 	reflectType := reflect.TypeOf(v)
 	if reflectType.Kind() == reflect.Ptr {
