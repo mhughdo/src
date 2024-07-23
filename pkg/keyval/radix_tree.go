@@ -157,7 +157,7 @@ func (t *RadixTree) updateLastID(id string) {
 	}
 }
 
-func (t *RadixTree) Range(startID, endID string, count uint64) ([]StreamEntry, error) {
+func (t *RadixTree) Range(startID, endID string, count uint64) []StreamEntry {
 	inclusiveStart := true
 	inclusiveEnd := true
 	if strings.HasPrefix(startID, "(") {
@@ -245,7 +245,7 @@ func (t *RadixTree) Range(startID, endID string, count uint64) ([]StreamEntry, e
 
 	*resultPtr = result[:0]
 	entrySlicePool.Put(resultPtr)
-	return result, nil
+	return result
 }
 
 func (n *RadixNode) split(position int) {
