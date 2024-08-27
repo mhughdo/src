@@ -412,6 +412,42 @@ func TestIsLargestID(t *testing.T) {
 	}
 }
 
+func TestValidateID(t *testing.T) {
+	tree := NewRadixTree()
+
+	tests := []struct {
+		name      string
+		id        string
+		wantValid bool
+		wantID    string
+	}{
+		{"Valid complete ID", "1234567890-0", true, "1234567890-0"},
+		{"Valid incomplete ID", "1234567890", true, "1234567890-0"},
+		{"Valid special ID +", "+", true, "+"},
+		{"Valid special ID -", "-", true, "-"},
+		{"Invalid ID with multiple hyphens", "1234-567-890", false, ""},
+		{"Invalid ID with negative timestamp", "-1234567890-0", false, ""},
+		{"Invalid ID with negative sequence", "1234567890--1", false, ""},
+		{"Invalid ID with non-numeric timestamp", "abcdefghij-0", false, ""},
+		{"Invalid ID with non-numeric sequence", "1234567890-a", false, ""},
+		{"Empty string", "", false, ""},
+		{"Invalid ID with only hyphen", "-", true, "-"},
+		{"Invalid ID with space", "1234567890 0", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValid, gotID := tree.ValidateID(tt.id)
+			if gotValid != tt.wantValid {
+				t.Errorf("ValidateID() gotValid = %v, want %v", gotValid, tt.wantValid)
+			}
+			if gotID != tt.wantID {
+				t.Errorf("ValidateID() gotID = %v, want %v", gotID, tt.wantID)
+			}
+		})
+	}
+}
+
 func incrementSequence(seq string) string {
 	i, _ := strconv.ParseInt(seq, 10, 64)
 	return strconv.FormatInt(i+1, 10)
