@@ -45,3 +45,7 @@ func (c *ClientCmd) Execute(cl *client.Client, wr *resp.Writer, args []*resp.Res
 
 	return wr.WriteSimpleValue(resp.SimpleString, []byte("OK"))
 }
+
+func (c *ClientCmd) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

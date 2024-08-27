@@ -72,3 +72,7 @@ func (c *ConfigCmd) handleGet(cl *client.Client, wr *resp.Writer, args []*resp.R
 		return wr.WriteStringSlice(resp)
 	}
 }
+
+func (c *ConfigCmd) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

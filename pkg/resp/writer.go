@@ -58,9 +58,12 @@ func (w *Writer) Reset() {
 
 func (w *Writer) Flush() error {
 	if bw, ok := w.writer.(*bufio.Writer); ok {
-		err := bw.Flush()
-		if err != nil {
-			return fmt.Errorf("failed to flush writer: %w", err)
+		n := bw.Buffered()
+		if n > 0 {
+			err := bw.Flush()
+			if err != nil {
+				return fmt.Errorf("failed to flush writer: %w", err)
+			}
 		}
 	}
 	return nil

@@ -34,3 +34,7 @@ func (k *Keys) Execute(_ *client.Client, wr *resp.Writer, args []*resp.Resp) err
 
 	return wr.WriteStringSlice(matchedKeys)
 }
+
+func (k *Keys) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

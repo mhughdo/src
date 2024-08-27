@@ -24,3 +24,7 @@ func (g *Get) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) erro
 
 	return wr.WriteBytes(val)
 }
+
+func (g *Get) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

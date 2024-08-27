@@ -388,7 +388,7 @@ func TestGenerateIncompleteID(t *testing.T) {
 	}
 }
 
-func TestValidateID(t *testing.T) {
+func TestIsLargestID(t *testing.T) {
 	tests := []struct {
 		name string
 		id   string
@@ -399,15 +399,15 @@ func TestValidateID(t *testing.T) {
 		{"Equal to last ID", "1001-1", false},
 		{"Lesser ID", "1000-0", false},
 		{"Lesser ID 2", "1-0", false},
-		{"Invalid format", "1000", false},
+		{"Invalid format", "2020000000000000000", false},
 		{"Empty string", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tree := setupRadixTree()
-			if got := tree.ValidateID(tt.id); got != tt.want {
-				t.Errorf("ValidateID() = %v, want %v", got, tt.want)
+			if got := tree.IsLargestID(tt.id); got != tt.want {
+				t.Errorf("IsLargestID() = %v, want %v", got, tt.want)
 			}
 		})
 	}
