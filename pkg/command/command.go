@@ -17,6 +17,7 @@ var (
 
 type Command interface {
 	Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error
+	IsBlocking(args []*resp.Resp) bool
 }
 
 type CommandFactory struct {
@@ -34,6 +35,10 @@ func (ec *EchoCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.R
 	return wr.WriteBytes(args[0].Bytes())
 }
 
+func (ec *EchoCommand) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}
+
 type PingCommand struct {
 }
 
@@ -42,6 +47,10 @@ func (pc *PingCommand) Execute(c *client.Client, wr *resp.Writer, args []*resp.R
 		return wr.WriteError(errors.New("wrong number of arguments for 'ping' command"))
 	}
 	return wr.WriteSimpleValue(resp.SimpleString, []byte("PONG"))
+}
+
+func (pc *PingCommand) IsBlocking(_ []*resp.Resp) bool {
+	return false
 }
 
 func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
@@ -59,6 +68,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
 			"type":   &TypeCmd{kv: kv},
 			"xadd":   &XAdd{kv: kv},
 			"xrange": &XRange{kv: kv},
+			"xread":  &XRead{kv: kv},
 		},
 	}
 }

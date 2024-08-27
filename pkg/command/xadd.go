@@ -98,3 +98,7 @@ func (x *XAdd) Execute(_ *client.Client, wr *resp.Writer, args []*resp.Resp) err
 	}
 	return wr.WriteString(entryID)
 }
+
+func (x *XAdd) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

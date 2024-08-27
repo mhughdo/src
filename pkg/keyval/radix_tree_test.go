@@ -388,7 +388,7 @@ func TestGenerateIncompleteID(t *testing.T) {
 	}
 }
 
-func TestValidateID(t *testing.T) {
+func TestIsLargestID(t *testing.T) {
 	tests := []struct {
 		name string
 		id   string
@@ -399,15 +399,50 @@ func TestValidateID(t *testing.T) {
 		{"Equal to last ID", "1001-1", false},
 		{"Lesser ID", "1000-0", false},
 		{"Lesser ID 2", "1-0", false},
-		{"Invalid format", "1000", false},
 		{"Empty string", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tree := setupRadixTree()
-			if got := tree.ValidateID(tt.id); got != tt.want {
-				t.Errorf("ValidateID() = %v, want %v", got, tt.want)
+			if got := tree.IsLargestID(tt.id); got != tt.want {
+				t.Errorf("IsLargestID() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateID(t *testing.T) {
+	tree := NewRadixTree()
+
+	tests := []struct {
+		name      string
+		id        string
+		wantValid bool
+		wantID    string
+	}{
+		{"Valid complete ID", "1234567890-0", true, "1234567890-0"},
+		{"Valid incomplete ID", "1234567890", true, "1234567890-0"},
+		{"Valid special ID +", "+", true, "+"},
+		{"Valid special ID -", "-", true, "-"},
+		{"Invalid ID with multiple hyphens", "1234-567-890", false, ""},
+		{"Invalid ID with negative timestamp", "-1234567890-0", false, ""},
+		{"Invalid ID with negative sequence", "1234567890--1", false, ""},
+		{"Invalid ID with non-numeric timestamp", "abcdefghij-0", false, ""},
+		{"Invalid ID with non-numeric sequence", "1234567890-a", false, ""},
+		{"Empty string", "", false, ""},
+		{"Invalid ID with only hyphen", "-", true, "-"},
+		{"Invalid ID with space", "1234567890 0", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValid, gotID := tree.ValidateID(tt.id)
+			if gotValid != tt.wantValid {
+				t.Errorf("ValidateID() gotValid = %v, want %v", gotValid, tt.wantValid)
+			}
+			if gotID != tt.wantID {
+				t.Errorf("ValidateID() gotID = %v, want %v", gotID, tt.wantID)
 			}
 		})
 	}

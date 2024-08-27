@@ -21,3 +21,7 @@ func (t *TypeCmd) Execute(_ *client.Client, wr *resp.Writer, args []*resp.Resp) 
 
 	return wr.WriteSimpleValue(resp.SimpleString, []byte(t.kv.Type(key)))
 }
+
+func (t *TypeCmd) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

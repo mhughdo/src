@@ -114,3 +114,7 @@ func parseStreamID(streamID string, start bool) (string, error) {
 	}
 	return fmt.Sprintf("%s-%d", parts[0], uint64(math.MaxUint64)), nil
 }
+
+func (x *XRange) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

@@ -74,7 +74,7 @@ type RadixTree struct {
 	size          int
 	lastTimestamp int64
 	sequence      int64
-	lastID        string
+	LastID        string
 }
 
 func NewRadixNode(prefix []byte) *RadixNode {
@@ -92,7 +92,7 @@ func NewRadixTree() *RadixTree {
 		size:          0,
 		lastTimestamp: 0,
 		sequence:      0,
-		lastID:        "",
+		LastID:        "",
 	}
 }
 
@@ -144,8 +144,8 @@ func (t *RadixTree) AddEntry(originalID string, fields [][]string) {
 }
 
 func (t *RadixTree) updateLastID(id string) {
-	if id > t.lastID {
-		t.lastID = id
+	if id > t.LastID {
+		t.LastID = id
 		parts := strings.Split(id, "-")
 		if len(parts) == 2 {
 			timestamp, err := strconv.ParseInt(parts[0], 10, 64)
@@ -329,35 +329,48 @@ func (t *RadixTree) GenerateIncompleteID(incompleteID string) (string, error) {
 	return fmt.Sprintf("%d-%d", t.lastTimestamp, t.sequence), nil
 }
 
-func (t *RadixTree) ValidateID(id string) bool {
+func (t *RadixTree) IsLargestID(id string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	parts := strings.Split(id, "-")
-	if len(parts) > 2 {
-		return false
-	}
-	timestamp, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return false
-	}
-	if timestamp < 0 {
-		return false
-	}
-	if len(parts) == 2 {
-		sequence, err := strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			return false
-		}
-		if sequence < 0 {
-			return false
-		}
-	}
-
-	if t.lastID == "" {
+	if t.LastID == "" {
 		return true
 	}
 
-	return id > t.lastID
+	return id > t.LastID
+}
+
+func (t *RadixTree) ValidateID(id string) (bool, string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if id == "+" || id == "-" {
+		return true, id
+	}
+	parts := strings.Split(id, "-")
+	if len(parts) > 2 {
+		return false, ""
+	}
+
+	timestamp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return false, ""
+	}
+	if timestamp < 0 {
+		return false, ""
+	}
+
+	if len(parts) == 2 {
+		sequence, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return false, ""
+		}
+		if sequence < 0 {
+			return false, ""
+		}
+	} else {
+		id += "-0"
+	}
+
+	return true, id
 }
 
 func (t *RadixTree) TrimBySize(maxSize int) int {

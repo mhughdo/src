@@ -60,3 +60,7 @@ func (h *Hello) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) er
 		"modules": []string{},
 	})
 }
+
+func (h *Hello) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

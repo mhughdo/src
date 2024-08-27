@@ -54,3 +54,7 @@ func buildSectionString(sectionName string, section map[string]string) string {
 	}
 	return sb.String()
 }
+
+func (h *Info) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

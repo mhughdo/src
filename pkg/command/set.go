@@ -167,3 +167,7 @@ func (s *Set) parseOptions(args []*resp.Resp) (*SetOptions, error) {
 
 	return opts, nil
 }
+
+func (s *Set) IsBlocking(_ []*resp.Resp) bool {
+	return false
+}

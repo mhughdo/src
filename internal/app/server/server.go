@@ -155,23 +155,49 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	logger.Info(ctx, "received command, cmd: %s, args: %v", cmdName, args)
 	cmd, err := s.cFactory.GetCommand(cmdName)
 	if err != nil {
-		writeErr := cl.Writer.WriteError(err)
-		if writeErr != nil {
-			return errors.Join(err, fmt.Errorf("failed to write error: %v", writeErr))
-		}
-		return err
+		return s.writeError(cl, err)
+	}
+	isBlocking := cmd.IsBlocking(args)
+	if isBlocking {
+		go s.handleBlockingCommand(ctx, cl, cmd, writer, args)
+		return nil
 	}
 	err = cmd.Execute(cl, writer, args)
 	if err != nil {
 		cl.Writer.Reset()
-		writeErr := cl.Writer.WriteError(err)
-		if writeErr != nil {
-			return errors.Join(err, fmt.Errorf("failed to write error: %v", writeErr))
-		}
-		return err
+		return s.writeError(cl, err)
 	}
 
 	return nil
+}
+
+func (s *Server) handleBlockingCommand(ctx context.Context, cl *client.Client, cmd command.Command, writer *resp.Writer, args []*resp.Resp) {
+	err := cmd.Execute(cl, writer, args)
+	if err != nil {
+		cl.Writer.Reset()
+		err = s.writeError(cl, err)
+	}
+	if err != nil {
+		logger.Error(ctx, "failed to handle message, err: %v", err)
+		if strings.Contains(err.Error(), "failed to write error:") {
+			s.closeClient(ctx, cl)
+			return
+		}
+	}
+
+	err = cl.Send()
+	if err != nil {
+		logger.Error(ctx, "failed to send message, err: %v", err)
+		s.closeClient(ctx, cl)
+	}
+}
+
+func (s *Server) writeError(cl *client.Client, err error) error {
+	writeErr := cl.Writer.WriteError(err)
+	if writeErr != nil {
+		return errors.Join(err, fmt.Errorf("failed to write error: %v", writeErr))
+	}
+	return err
 }
 
 func (s *Server) Close(_ context.Context) error {
