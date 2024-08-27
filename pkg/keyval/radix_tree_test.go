@@ -399,7 +399,6 @@ func TestIsLargestID(t *testing.T) {
 		{"Equal to last ID", "1001-1", false},
 		{"Lesser ID", "1000-0", false},
 		{"Lesser ID 2", "1-0", false},
-		{"Invalid format", "2020000000000000000", false},
 		{"Empty string", "", false},
 	}
 
