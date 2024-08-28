@@ -108,13 +108,11 @@ func (x *XRead) readStreams(opts *XReadOptions) (map[string][]keyval.StreamEntry
 		var entries []keyval.StreamEntry
 		if lastID == "$" {
 			// Ignore this case as $ means only new entries
-			// entries = stream.Range(stream.LastID(), "+", 1)
 		} else if lastID == "+" {
-			entries = stream.Range(stream.LastID(), "+", 1)
+			entries = append(entries, stream.Range(stream.LastID(), "+", 1)...)
 		} else {
-			entries = stream.Range(lastID, "+", opts.Count)
+			entries = append(entries, stream.Range(lastID, "+", opts.Count)...)
 		}
-
 		if len(entries) > 0 {
 			result[streamName] = entries
 			hasData = true
