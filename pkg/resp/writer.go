@@ -330,6 +330,31 @@ func (w *Writer) WriteSlice(v any) error {
 	return nil
 }
 
+func (w *Writer) WriteMapOrdered(m map[string]any, orderedKeys []string) error {
+	if err := w.WriteByte(Map); err != nil {
+		return err
+	}
+
+	if err := w.writeLen(len(m)); err != nil {
+		return err
+	}
+
+	for _, k := range orderedKeys {
+		v, ok := m[k]
+		if !ok {
+			continue // Skip keys that are not in the map
+		}
+		if err := w.writeBytesWithType(BulkString, []byte(k)); err != nil {
+			return err
+		}
+		if err := w.WriteValue(v); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (w *Writer) WriteMap(m map[string]any) error {
 	if err := w.WriteByte(Map); err != nil {
 		return err
