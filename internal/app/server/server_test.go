@@ -295,6 +295,7 @@ func TestXReadCommand(t *testing.T) {
 			action: func() (interface{}, error) {
 				result, err := rdb.XRead(ctx, &redis.XReadArgs{
 					Streams: []string{"mystream", "0-0"},
+					Block:   -1,
 				}).Result()
 				if err == redis.Nil {
 					return nil, nil
@@ -316,6 +317,7 @@ func TestXReadCommand(t *testing.T) {
 			action: func() (interface{}, error) {
 				return rdb.XRead(ctx, &redis.XReadArgs{
 					Streams: []string{"mystream", "0-0"},
+					Block:   -1,
 				}).Result()
 			},
 			expected: []redis.XStream{{Stream: "mystream", Messages: []redis.XMessage{{ID: "1-1", Values: map[string]interface{}{"field1": "value1"}}}}},
@@ -339,6 +341,7 @@ func TestXReadCommand(t *testing.T) {
 				streams, err := rdb.XRead(ctx, &redis.XReadArgs{
 					Streams: []string{"mystream2", "0-0"},
 					Count:   3,
+					Block:   -1,
 				}).Result()
 				if err != nil {
 					return nil, err
@@ -417,6 +420,61 @@ func TestXReadCommand(t *testing.T) {
 			expected: []redis.XStream{{Stream: "mystream7", Messages: []redis.XMessage{{ID: "1-1", Values: map[string]interface{}{"field1": "value1"}}}}},
 		},
 		{
+			name: "XRead (multiple streams and multiple entries)",
+			setup: func() error {
+				_, err := rdb.XAdd(ctx, &redis.XAddArgs{
+					Stream: "mystream20",
+					ID:     "1-1",
+					Values: map[string]interface{}{"field1": "value1"},
+				}).Result()
+				if err != nil {
+					return err
+				}
+				_, err = rdb.XAdd(ctx, &redis.XAddArgs{
+					Stream: "mystream21",
+					ID:     "2-2",
+					Values: map[string]interface{}{"field2": "value2"},
+				}).Result()
+				if err != nil {
+					return err
+				}
+				_, err = rdb.XAdd(ctx, &redis.XAddArgs{
+					Stream: "mystream20",
+					ID:     "1-2",
+					Values: map[string]interface{}{"field1": "value1"},
+				}).Result()
+				if err != nil {
+					return err
+				}
+				_, err = rdb.XAdd(ctx, &redis.XAddArgs{
+					Stream: "mystream21",
+					ID:     "2-3",
+					Values: map[string]interface{}{"field2": "value2"},
+				}).Result()
+				if err != nil {
+					return err
+				}
+				return nil
+			},
+			action: func() (interface{}, error) {
+				return rdb.XRead(ctx, &redis.XReadArgs{
+					Streams: []string{"mystream20", "mystream21", "0-0", "0-0"},
+					Block:   -1,
+				}).Result()
+			},
+			expected: []redis.XStream{{Stream: "mystream20", Messages: []redis.XMessage{
+				{ID: "1-1", Values: map[string]interface{}{"field1": "value1"}},
+				{ID: "1-2", Values: map[string]interface{}{"field1": "value1"}},
+			}},
+				{
+					Stream: "mystream21", Messages: []redis.XMessage{
+						{ID: "2-2", Values: map[string]interface{}{"field2": "value2"}},
+						{ID: "2-3", Values: map[string]interface{}{"field2": "value2"}},
+					},
+				},
+			},
+		},
+		{
 			name: "XRead with BLOCK and COUNT",
 			setup: func() error {
 				return nil
@@ -492,6 +550,7 @@ func TestXReadCommand(t *testing.T) {
 			action: func() (interface{}, error) {
 				streams, err := rdb.XRead(ctx, &redis.XReadArgs{
 					Streams: []string{"mystream4", "mystream5", "0-0", "0-0"},
+					Block:   -1,
 				}).Result()
 				if err != nil {
 					return nil, err

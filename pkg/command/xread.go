@@ -2,6 +2,7 @@ package command
 
 import (
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ type XRead struct {
 
 type XReadOptions struct {
 	Count   uint64
-	Block   time.Duration
+	Block   *time.Duration
 	Streams map[string]string
 }
 
@@ -71,7 +72,8 @@ func (x *XRead) parseArgs(args []*resp.Resp) (*XReadOptions, error) {
 			if err != nil {
 				return nil, errors.New("ERR value is not an integer or out of range")
 			}
-			opts.Block = time.Duration(block) * time.Millisecond
+			duration := time.Duration(block) * time.Millisecond
+			opts.Block = &duration
 		case "STREAMS":
 			i++
 			streamCount := (len(args) - i) / 2
@@ -113,7 +115,7 @@ func (x *XRead) readStreams(opts *XReadOptions) (map[string][]keyval.StreamEntry
 			// Ignore this case as $ means only new entries
 		} else if lastID == "+" {
 			entries = append(entries, stream.Range(stream.LastID(), "+", 1)...)
-		} else if opts.Block <= 0 {
+		} else if opts.Block == nil { // TODO: remove this condition
 			entries = append(entries, stream.Range(lastID, "+", opts.Count)...)
 		}
 		if len(entries) > 0 {
@@ -126,7 +128,7 @@ func (x *XRead) readStreams(opts *XReadOptions) (map[string][]keyval.StreamEntry
 		return result, nil
 	}
 
-	if opts.Block > 0 {
+	if opts.Block != nil {
 		return x.blockingRead(opts)
 	}
 
@@ -155,27 +157,35 @@ func (x *XRead) blockingRead(opts *XReadOptions) (map[string][]keyval.StreamEntr
 		subscriptions[streamName] = ch
 	}
 
-	timer := time.NewTimer(opts.Block)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-timer.C:
-			return nil, nil
-		default:
-			for streamName, ch := range subscriptions {
-				select {
-				case entry := <-ch:
-					result[streamName] = []keyval.StreamEntry{entry}
-					return result, nil
-				default:
-					// No entry available for this stream, continue to next
-				}
-			}
-			// Small sleep to prevent busy-waiting
-			time.Sleep(1 * time.Millisecond)
-		}
+	var timer *time.Timer
+	if opts.Block != nil && *opts.Block > 0 {
+		timer = time.NewTimer(*opts.Block)
+		defer timer.Stop()
 	}
+
+	cases := make([]reflect.SelectCase, 0, len(subscriptions)+1)
+	for _, ch := range subscriptions {
+		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
+	}
+
+	if timer != nil {
+		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(timer.C)})
+	}
+
+	chosen, value, _ := reflect.Select(cases)
+	if chosen == len(cases)-1 && timer != nil {
+		// Timeout
+		return nil, nil
+	}
+
+	if chosen < len(subscriptions) {
+		streamName := x.streamOrder[chosen]
+		entry := value.Interface().(keyval.StreamEntry)
+		result[streamName] = []keyval.StreamEntry{entry}
+		return result, nil
+	}
+
+	return nil, nil
 }
 
 func (x *XRead) writeResult(cl *client.Client, wr *resp.Writer, result map[string][]keyval.StreamEntry) error {
@@ -224,7 +234,7 @@ func (x *XRead) IsBlocking(args []*resp.Resp) bool {
 	for i, arg := range args {
 		if strings.ToUpper(arg.String()) == "BLOCK" {
 			if i+1 < len(args) {
-				if block, err := strconv.ParseInt(args[i+1].String(), 10, 64); err == nil && block > 0 {
+				if _, err := strconv.ParseInt(args[i+1].String(), 10, 64); err == nil {
 					return true
 				}
 			}
