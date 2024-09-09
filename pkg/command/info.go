@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	SERVER = "server"
+	SERVER      = "server"
+	REPLICATION = "replication"
 )
 
 var (
@@ -20,6 +21,9 @@ var (
 			"redis_git_sha1": "random-sha1",
 			"redis_build_id": "20240616",
 			"redis_mode":     "standalone",
+		},
+		REPLICATION: {
+			"role": "master",
 		},
 	}
 )

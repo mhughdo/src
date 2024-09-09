@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -16,7 +17,7 @@ import (
 )
 
 var (
-	listen     = flag.String("listen", ":6379", "listen address")
+	port       = flag.String("port", "6379", "listening port")
 	dir        = flag.String("dir", "/tmp/redis", "data directory")
 	dbFilename = flag.String("dbfilename", "dump.rdb", "database filename")
 )
@@ -30,7 +31,7 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 	defer signal.Stop(sigCh)
 	cfg := config.NewConfig()
 	err := cfg.SetBatch(map[string]string{
-		config.ListenAddrKey: *listen,
+		config.ListenAddrKey: fmt.Sprintf(":%s", *port),
 		config.DirKey:        *dir,
 		config.DBFilenameKey: *dbFilename,
 	})
