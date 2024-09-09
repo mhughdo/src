@@ -61,7 +61,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config) *CommandFactory {
 			"set":    &Set{kv: kv},
 			"get":    &Get{kv: kv},
 			"hello":  &Hello{},
-			"info":   &Info{},
+			"info":   &Info{cfg: cfg},
 			"client": &ClientCmd{},
 			"config": &ConfigCmd{cfg: cfg},
 			"keys":   &Keys{kv: kv},

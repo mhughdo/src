@@ -11,12 +11,14 @@ const (
 	ListenAddrKey = "LISTENADDR"
 	DirKey        = "DIR"
 	DBFilenameKey = "DBFILENAME"
+	ReplicaOfKey  = "REPLICAOF"
 )
 
 var supportedOptions = map[string]struct{}{
 	ListenAddrKey: {},
 	DirKey:        {},
 	DBFilenameKey: {},
+	ReplicaOfKey:  {},
 }
 
 type Config struct {
@@ -51,6 +53,9 @@ func (c *Config) SetBatch(pairs map[string]string) error {
 	for key, value := range pairs {
 		if _, exists := supportedOptions[strings.ToUpper(key)]; !exists {
 			return fmt.Errorf("%s for %s", ErrOptionNotFound, key)
+		}
+		if value == "" {
+			continue
 		}
 		c.options[key] = value
 	}

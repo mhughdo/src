@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ var (
 	port       = flag.String("port", "6379", "listening port")
 	dir        = flag.String("dir", "/tmp/redis", "data directory")
 	dbFilename = flag.String("dbfilename", "dump.rdb", "database filename")
+	replicaOf  = flag.String("replicaof", "", "replica of another redis server")
 )
 
 func run(ctx context.Context, _ io.Writer, _ []string) error {
@@ -30,10 +32,14 @@ func run(ctx context.Context, _ io.Writer, _ []string) error {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer signal.Stop(sigCh)
 	cfg := config.NewConfig()
+	if *replicaOf != "" && len(strings.Split(*replicaOf, " ")) != 2 {
+		return fmt.Errorf("invalid replicaof flag, expected format: replicaof <host> <port>")
+	}
 	err := cfg.SetBatch(map[string]string{
 		config.ListenAddrKey: fmt.Sprintf(":%s", *port),
 		config.DirKey:        *dir,
 		config.DBFilenameKey: *dbFilename,
+		config.ReplicaOfKey:  *replicaOf,
 	})
 	if err != nil {
 		return err
