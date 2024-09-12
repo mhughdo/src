@@ -7,6 +7,7 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/codecrafters-io/redis-starter-go/pkg/utils"
 )
 
 const (
@@ -33,7 +34,9 @@ var sections = map[string]SectionInfo{
 	},
 	REPLICATION: {
 		DynamicFields: map[string]DynamicFieldHandler{
-			"role": determineRole,
+			"role":               determineRole,
+			"master_replid":      generateMasterReplID,
+			"master_repl_offset": getMasterReplOffset,
 		},
 	},
 }
@@ -92,4 +95,12 @@ func determineRole(cfg *config.Config) string {
 		return "slave"
 	}
 	return "master"
+}
+
+func generateMasterReplID(_ *config.Config) string {
+	return utils.GenerateRandomAlphanumeric(40)
+}
+
+func getMasterReplOffset(_ *config.Config) string {
+	return "0"
 }
