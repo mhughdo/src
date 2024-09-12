@@ -97,6 +97,10 @@ func (c *Client) Send() error {
 	return c.Writer.Flush()
 }
 
+func (c *Client) Conn() net.Conn {
+	return c.conn
+}
+
 func (c *Client) RemoteAddr() string {
 	return c.conn.RemoteAddr().String()
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
@@ -30,12 +32,23 @@ type Server struct {
 	store          keyval.KV
 	clients        map[*client.Client]struct{}
 	cFactory       *command.CommandFactory
+	isMaster       bool
+	masterAddr     string
 	messageChan    chan client.Message
+	masterClient   *client.Client
 	disconnectChan chan *client.Client
 }
 
 func NewServer(cfg *config.Config) *Server {
 	store := keyval.NewStore()
+	replicaOf, _ := cfg.Get(config.ReplicaOfKey)
+	isMaster := replicaOf == ""
+	var masterAddr string
+	if !isMaster {
+		parts := strings.Split(replicaOf, " ")
+		masterAddr = fmt.Sprintf("%s:%s", parts[0], parts[1])
+	}
+
 	return &Server{
 		mu:             sync.Mutex{},
 		cfg:            cfg,
@@ -43,7 +56,10 @@ func NewServer(cfg *config.Config) *Server {
 		store:          store,
 		cFactory:       command.NewCommandFactory(store, cfg),
 		clients:        make(map[*client.Client]struct{}),
+		isMaster:       isMaster,
+		masterAddr:     masterAddr,
 		messageChan:    make(chan client.Message),
+		masterClient:   nil,
 		disconnectChan: make(chan *client.Client),
 	}
 }
@@ -74,6 +90,9 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to parse rdb, err: %v", err)
 		}
 		s.store.RestoreRDB(rdb.GetData())
+	}
+	if err := s.startReplication(ctx); err != nil {
+		return fmt.Errorf("failed to start replication: %v", err)
 	}
 	if err := s.Listen(ctx); err != nil {
 		return fmt.Errorf("failed to listen, err: %v", err)
@@ -113,6 +132,53 @@ func (s *Server) acceptConnection(ctx context.Context) error {
 		s.mu.Unlock()
 		go cl.HandleConnection(ctx)
 	}
+}
+
+func (s *Server) startReplication(ctx context.Context) error {
+	if s.isMaster {
+		return nil
+	}
+	conn, err := net.Dial("tcp", s.masterAddr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to master: %v", err)
+	}
+	s.masterClient = client.NewClient(conn, nil)
+
+	if err := s.sendPingToMaster(ctx); err != nil {
+		return fmt.Errorf("failed to send PING to master: %v", err)
+	}
+	// TODO: Implement REPLCONF and PSYNC in later stages
+
+	return nil
+}
+
+func (s *Server) sendPingToMaster(ctx context.Context) error {
+	pingCmd := resp.CreatePingCommand()
+	if _, err := s.masterClient.Writer.Write(pingCmd); err != nil {
+		return err
+	}
+	if err := s.masterClient.Writer.Flush(); err != nil {
+		return err
+	}
+	conn := s.masterClient.Conn()
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		return err
+	}
+	reader := resp.NewResp(bytes.NewReader(buffer[:n]))
+	response, err := reader.ParseResp()
+	if err != nil {
+		return err
+	}
+
+	if response.Type != resp.SimpleString || response.String() != "PONG" {
+		return fmt.Errorf("unexpected response from master: %v", response)
+	}
+
+	logger.Info(ctx, "Successfully sent PING to master and received PONG")
+	return nil
 }
 
 func (s *Server) loop(ctx context.Context) {
