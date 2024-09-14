@@ -25,10 +25,12 @@ type Info struct {
 }
 
 type Client struct {
+	ID                   string
 	conn                 net.Conn
 	authenticated        bool
 	info                 Info
 	preferredRespVersion int
+	ListeningPort        string
 	bw                   *bufio.Writer
 	lastInteraction      time.Time
 	disconnectChan       chan *Client
