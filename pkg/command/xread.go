@@ -138,6 +138,7 @@ func (x *XRead) readStreams(opts *XReadOptions) (map[string][]keyval.StreamEntry
 func (x *XRead) blockingRead(opts *XReadOptions) (map[string][]keyval.StreamEntry, error) {
 	result := make(map[string][]keyval.StreamEntry)
 	subscriptions := make(map[string]chan keyval.StreamEntry)
+
 	defer func() {
 		for streamName, ch := range subscriptions {
 			stream, _ := x.kv.GetStream(streamName, false)
@@ -162,9 +163,9 @@ func (x *XRead) blockingRead(opts *XReadOptions) (map[string][]keyval.StreamEntr
 		timer = time.NewTimer(*opts.Block)
 		defer timer.Stop()
 	}
-
 	cases := make([]reflect.SelectCase, 0, len(subscriptions)+1)
-	for _, ch := range subscriptions {
+	for _, streamName := range x.streamOrder {
+		ch := subscriptions[streamName]
 		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
 	}
 
