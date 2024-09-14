@@ -160,6 +160,10 @@ func (s *Server) startReplication(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to send REPLCONF to master: %v", err)
 	}
 
+	if err := s.sendPsyncToMaster(ctx); err != nil {
+		return fmt.Errorf("failed to send PSYNC to master: %v", err)
+	}
+
 	return nil
 }
 
@@ -219,6 +223,21 @@ func (s *Server) sendReplconfToMaster(ctx context.Context) error {
 	}
 
 	logger.Info(ctx, "Successfully sent REPLCONF commands to master")
+	return nil
+}
+
+func (s *Server) sendPsyncToMaster(ctx context.Context) error {
+	psyncCmd := resp.CreatePsyncCommand("?", "-1")
+	response, err := s.sendAndReceive(psyncCmd)
+	if err != nil {
+		return fmt.Errorf("failed to send PSYNC to master: %v", err)
+	}
+
+	if response.Type != resp.SimpleString || !strings.HasPrefix(response.String(), "FULLRESYNC") {
+		return fmt.Errorf("unexpected response from master for PSYNC: %v", response)
+	}
+
+	logger.Info(ctx, "Successfully sent PSYNC to master and received FULLRESYNC")
 	return nil
 }
 

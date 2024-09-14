@@ -74,6 +74,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			"xrange":   &XRange{kv: kv},
 			"xread":    &XRead{kv: kv},
 			"replconf": &ReplConf{},
+			"psync":    &Psync{},
 		},
 	}
 }
