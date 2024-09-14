@@ -24,8 +24,8 @@ type Command interface {
 }
 
 type CommandFactory struct {
-	commands   map[string]Command
-	serverInfo ServerInfoProvider
+	commands map[string]Command
+	// serverInfo ServerInfoProvider
 }
 
 type EchoCommand struct {

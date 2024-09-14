@@ -5,7 +5,7 @@ import "bytes"
 func CreateCommand(args ...string) []byte {
 	var buf bytes.Buffer
 	w := NewWriter(&buf, RESP3)
-	w.WriteStringSlice(args)
+	_ = w.WriteStringSlice(args)
 
 	return buf.Bytes()
 }

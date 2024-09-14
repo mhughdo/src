@@ -185,7 +185,10 @@ func (s *Server) sendAndReceive(cmd []byte) (*resp.Resp, error) {
 		return nil, err
 	}
 	conn := s.masterClient.Conn()
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %v", err)
+	}
 	buffer := make([]byte, 1024)
 	n, err := conn.Read(buffer)
 	if err != nil {
