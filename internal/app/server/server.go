@@ -18,6 +18,7 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/pkg/rdb"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
 	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
+	"github.com/codecrafters-io/redis-starter-go/pkg/utils"
 )
 
 const (
@@ -33,6 +34,7 @@ type Server struct {
 	clients        map[*client.Client]struct{}
 	cFactory       *command.CommandFactory
 	isMaster       bool
+	replicas       map[*client.Client]struct{}
 	masterAddr     string
 	messageChan    chan client.Message
 	masterClient   *client.Client
@@ -48,20 +50,21 @@ func NewServer(cfg *config.Config) *Server {
 		parts := strings.Split(replicaOf, " ")
 		masterAddr = fmt.Sprintf("%s:%s", parts[0], parts[1])
 	}
-
-	return &Server{
+	s := &Server{
 		mu:             sync.Mutex{},
 		cfg:            cfg,
 		done:           make(chan struct{}),
 		store:          store,
-		cFactory:       command.NewCommandFactory(store, cfg),
 		clients:        make(map[*client.Client]struct{}),
 		isMaster:       isMaster,
+		replicas:       make(map[*client.Client]struct{}),
 		masterAddr:     masterAddr,
 		messageChan:    make(chan client.Message),
 		masterClient:   nil,
 		disconnectChan: make(chan *client.Client),
 	}
+	s.cFactory = command.NewCommandFactory(store, cfg, s)
+	return s
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -127,14 +130,19 @@ func (s *Server) acceptConnection(ctx context.Context) error {
 			}
 		}
 		cl := client.NewClient(conn, s.messageChan)
-		s.mu.Lock()
+		cl.ID = utils.GenerateRandomAlphanumeric(40)
 		s.clients[cl] = struct{}{}
-		s.mu.Unlock()
 		go cl.HandleConnection(ctx)
 	}
 }
 
-func (s *Server) startReplication(ctx context.Context) error {
+func (s *Server) startReplication(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			s.masterClient = nil
+		}
+	}()
+
 	if s.isMaster {
 		return nil
 	}
@@ -147,37 +155,70 @@ func (s *Server) startReplication(ctx context.Context) error {
 	if err := s.sendPingToMaster(ctx); err != nil {
 		return fmt.Errorf("failed to send PING to master: %v", err)
 	}
-	// TODO: Implement REPLCONF and PSYNC in later stages
+
+	if err := s.sendReplconfToMaster(ctx); err != nil {
+		return fmt.Errorf("failed to send REPLCONF to master: %v", err)
+	}
 
 	return nil
 }
 
 func (s *Server) sendPingToMaster(ctx context.Context) error {
 	pingCmd := resp.CreatePingCommand()
-	if _, err := s.masterClient.Writer.Write(pingCmd); err != nil {
-		return err
-	}
-	if err := s.masterClient.Writer.Flush(); err != nil {
-		return err
-	}
-	conn := s.masterClient.Conn()
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
+	response, err := s.sendAndReceive(pingCmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response from master: %v", err)
 	}
-	reader := resp.NewResp(bytes.NewReader(buffer[:n]))
-	response, err := reader.ParseResp()
-	if err != nil {
-		return err
-	}
-
 	if response.Type != resp.SimpleString || response.String() != "PONG" {
 		return fmt.Errorf("unexpected response from master: %v", response)
 	}
 
 	logger.Info(ctx, "Successfully sent PING to master and received PONG")
+	return nil
+}
+
+func (s *Server) sendAndReceive(cmd []byte) (*resp.Resp, error) {
+	if _, err := s.masterClient.Writer.Write(cmd); err != nil {
+		return nil, err
+	}
+	if err := s.masterClient.Writer.Flush(); err != nil {
+		return nil, err
+	}
+	conn := s.masterClient.Conn()
+	err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %v", err)
+	}
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+	reader := resp.NewResp(bytes.NewReader(buffer[:n]))
+	response, err := reader.ParseResp()
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (s *Server) sendReplconfToMaster(ctx context.Context) error {
+	// Send REPLCONF listening-port
+	port, _ := s.cfg.Get(config.ListenAddrKey)
+	port = strings.TrimPrefix(port, ":")
+	replconfPort := resp.CreateReplconfCommand("listening-port", port)
+	response, err := s.sendAndReceive(replconfPort)
+	if err != nil || response.Type != resp.SimpleString || response.String() != "OK" {
+		return fmt.Errorf("unexpected response from master for REPLCONF listening-port: %v", response)
+	}
+
+	replconfCapa := resp.CreateReplconfCommand("capa", "psync2")
+	response, err = s.sendAndReceive(replconfCapa)
+	if err != nil || response.Type != resp.SimpleString || response.String() != "OK" {
+		return fmt.Errorf("unexpected response from master for REPLCONF capa psync2: %v", response)
+	}
+
+	logger.Info(ctx, "Successfully sent REPLCONF commands to master")
 	return nil
 }
 
@@ -216,7 +257,7 @@ func (s *Server) closeClient(ctx context.Context, cl *client.Client) {
 
 func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.Resp) error {
 	writer := cl.Writer
-	cmdName := r.Data.([]*resp.Resp)[0].String()
+	cmdName := strings.ToLower(r.Data.([]*resp.Resp)[0].String())
 	args := r.Data.([]*resp.Resp)[1:]
 	logger.Info(ctx, "received command, cmd: %s, args: %v", cmdName, args)
 	cmd, err := s.cFactory.GetCommand(cmdName)
@@ -233,8 +274,33 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 		cl.Writer.Reset()
 		return s.writeError(cl, err)
 	}
+	if cmdName == "replconf" && len(args) > 0 && args[0].String() == "listening-port" {
+		s.addReplica(cl)
+	}
 
 	return nil
+}
+
+func (s *Server) addReplica(c *client.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replicas[c] = struct{}{}
+}
+
+func (s *Server) GetReplicaInfo() []map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	info := make([]map[string]string, 0, len(s.replicas))
+	for replica := range s.replicas {
+		replicaInfo := map[string]string{
+			"id":             replica.ID,
+			"addr":           replica.Conn().RemoteAddr().String(),
+			"listening_port": replica.ListeningPort,
+		}
+		info = append(info, replicaInfo)
+	}
+	return info
 }
 
 func (s *Server) handleBlockingCommand(ctx context.Context, cl *client.Client, cmd command.Command, writer *resp.Writer, args []*resp.Resp) {
