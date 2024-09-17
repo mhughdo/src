@@ -201,6 +201,14 @@ func (p *RDBParser) handlerAuxiliaryField(ctx context.Context) error {
 			return fmt.Errorf("failed to parse used-mem: %w", err)
 		}
 		logger.Info(ctx, "RDB memory usage when created %.2f MB", float64(usedMem)/1024/1024)
+	case "redis-bits":
+		redisBits, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse redis-bits: %w", err)
+		}
+		logger.Info(ctx, "RDB is %d bit", redisBits)
+	case "aof-base":
+		logger.Info(ctx, fmt.Sprintf("AOF enabled: %s", value))
 	}
 
 	return nil

@@ -78,6 +78,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			"psync": &Psync{
 				serverInfo: serverInfo,
 			},
+			"save": &Save{kv: kv},
 		},
 	}
 }
