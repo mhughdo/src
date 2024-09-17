@@ -208,7 +208,7 @@ func (p *RDBParser) handlerAuxiliaryField(ctx context.Context) error {
 		}
 		logger.Info(ctx, "RDB is %d bit", redisBits)
 	case "aof-base":
-		logger.Info(ctx, fmt.Sprintf("AOF enabled: %s", value))
+		logger.Info(ctx, "AOF enabled: %s", value)
 	}
 
 	return nil

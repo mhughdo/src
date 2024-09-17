@@ -19,8 +19,8 @@ func TestRDBSaver(t *testing.T) {
 		{
 			name: "Basic string values",
 			setupFn: func(store keyval.KV) {
-				store.Set("str1", []byte("hello"))
-				store.Set("str2", []byte("world"))
+				_ = store.Set("str1", []byte("hello"))
+				_ = store.Set("str2", []byte("world"))
 			},
 			expected: map[string]keyval.Value{
 				"str1": {Type: keyval.ValueTypeString, Data: []byte("hello")},
@@ -30,9 +30,9 @@ func TestRDBSaver(t *testing.T) {
 		{
 			name: "String values with expiry",
 			setupFn: func(store keyval.KV) {
-				store.Set("exp1", []byte("expiring soon"))
+				_ = store.Set("exp1", []byte("expiring soon"))
 				store.PExpire("exp1", time.Hour)
-				store.Set("exp2", []byte("not expiring"))
+				_ = store.Set("exp2", []byte("not expiring"))
 			},
 			expected: map[string]keyval.Value{
 				"exp1": {Type: keyval.ValueTypeString, Data: []byte("expiring soon"), Expiry: uint64(time.Now().Add(time.Hour).UnixMilli())},
@@ -42,8 +42,8 @@ func TestRDBSaver(t *testing.T) {
 		{
 			name: "Empty string and numeric values",
 			setupFn: func(store keyval.KV) {
-				store.Set("empty", []byte(""))
-				store.Set("num", []byte("12345"))
+				_ = store.Set("empty", []byte(""))
+				_ = store.Set("num", []byte("12345"))
 			},
 			expected: map[string]keyval.Value{
 				"empty": {Type: keyval.ValueTypeString, Data: []byte("")},
@@ -53,7 +53,7 @@ func TestRDBSaver(t *testing.T) {
 		{
 			name: "Unicode string values",
 			setupFn: func(store keyval.KV) {
-				store.Set("unicode", []byte("こんにちは世界"))
+				_ = store.Set("unicode", []byte("こんにちは世界"))
 			},
 			expected: map[string]keyval.Value{
 				"unicode": {Type: keyval.ValueTypeString, Data: []byte("こんにちは世界")},
