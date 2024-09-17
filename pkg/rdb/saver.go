@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/pkg/crc64"
@@ -72,20 +71,53 @@ func (s *RDBSaver) writeLength(length uint64) error {
 }
 
 func (s *RDBSaver) writeHeader() error {
-	header := fmt.Sprintf("REDIS%04d", 6)
+	header := fmt.Sprintf("REDIS%04d", 12)
 	return s.write([]byte(header))
 }
 
-func (s *RDBSaver) writeAuxiliaryField(key, value string) error {
+func (s *RDBSaver) writeWithSpecialFormat(val any) error {
+	// first 2 bits represent the encoding type, for special format, it's always 11
+	// next 6 bits represent the format type, 0 for int8, 1 for int16, 2 for int32, 3 for compressed string
+	var b byte = 0xC0
+	var buf []byte
+	switch v := val.(type) {
+	case int8:
+		b |= 0
+		buf = []byte{byte(v)}
+	case int16:
+		b |= 1
+		buf = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, uint16(v))
+	case int32:
+		b |= 2
+		buf = make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf, uint32(v))
+	default:
+		return fmt.Errorf("writeWithSpecialFormat: unsupported value type: %T", val)
+	}
+	if err := s.writeByte(b); err != nil {
+		return err
+	}
+
+	return s.write(buf)
+}
+func (s *RDBSaver) writeAuxiliaryField(key string, value interface{}) error {
 	if err := s.writeByte(RDBMarkerAuxiliaryField); err != nil {
 		return err
 	}
+
 	if err := s.writeString(key); err != nil {
 		return err
 	}
-	if err := s.writeString(value); err != nil {
-		return err
+	switch v := value.(type) {
+	case string:
+		if err := s.writeString(key); err != nil {
+			return err
+		}
+	default:
+		return s.writeWithSpecialFormat(v)
 	}
+
 	return nil
 }
 
@@ -150,17 +182,17 @@ func (s *RDBSaver) SaveRDB(wr io.Writer) error {
 	if err := s.writeAuxiliaryField("redis-ver", "7.4.0"); err != nil {
 		return err
 	}
-	if err := s.writeAuxiliaryField("redis-bits", "64"); err != nil {
+	if err := s.writeAuxiliaryField("redis-bits", int8(64)); err != nil {
 		return err
 	}
-	ctime := strconv.FormatInt(time.Now().Unix(), 10)
-	if err := s.writeAuxiliaryField("ctime", ctime); err != nil {
+	ctime := time.Now().Unix()
+	if err := s.writeAuxiliaryField("ctime", int32(ctime)); err != nil {
 		return err
 	}
-	if err := s.writeAuxiliaryField("used-mem", "0"); err != nil {
+	if err := s.writeAuxiliaryField("used-mem", int32(0)); err != nil {
 		return err
 	}
-	if err := s.writeAuxiliaryField("aof-base", "0"); err != nil {
+	if err := s.writeAuxiliaryField("aof-base", int8(0)); err != nil {
 		return err
 	}
 
