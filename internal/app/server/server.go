@@ -38,6 +38,7 @@ type Server struct {
 	masterAddr     string
 	messageChan    chan client.Message
 	masterClient   *client.Client
+	replicationID  string
 	disconnectChan chan *client.Client
 }
 
@@ -50,6 +51,10 @@ func NewServer(cfg *config.Config) *Server {
 		parts := strings.Split(replicaOf, " ")
 		masterAddr = fmt.Sprintf("%s:%s", parts[0], parts[1])
 	}
+	var replicationID string
+	if isMaster {
+		replicationID = utils.GenerateRandomAlphanumeric(40)
+	}
 	s := &Server{
 		mu:             sync.Mutex{},
 		cfg:            cfg,
@@ -61,6 +66,7 @@ func NewServer(cfg *config.Config) *Server {
 		masterAddr:     masterAddr,
 		messageChan:    make(chan client.Message),
 		masterClient:   nil,
+		replicationID:  replicationID,
 		disconnectChan: make(chan *client.Client),
 	}
 	s.cFactory = command.NewCommandFactory(store, cfg, s)
@@ -360,4 +366,10 @@ func (s *Server) Close(_ context.Context) error {
 		return fmt.Errorf("failed to close listener: %w", err)
 	}
 	return nil
+}
+
+func (s *Server) GetReplicationID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.replicationID
 }
