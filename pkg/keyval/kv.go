@@ -46,6 +46,8 @@ type Value struct {
 
 type KV interface {
 	RestoreRDB(data map[string]Value)
+	GetExpiry(key string) uint64
+	IsExpired(key string) bool
 	Get(key string) []byte
 	Set(key string, value []byte) error
 	Expire(key string, duration time.Duration)
@@ -57,6 +59,7 @@ type KV interface {
 	Keys() []string
 	Type(key string) string
 	GetStream(key string, createIfNotExists bool) (*Stream, error)
+	Export() map[string]Value
 }
 
 type kv struct {
@@ -187,4 +190,32 @@ func (kv *kv) GetStream(key string, createIfNotExist bool) (*Stream, error) {
 		return nil, errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	return s.Data.(*Stream), nil
+}
+
+func (kv *kv) GetExpiry(key string) uint64 {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+	if v, ok := kv.store[key]; ok {
+		return v.Expiry
+	}
+	return 0
+}
+
+func (kv *kv) IsExpired(key string) bool {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+	if v, ok := kv.store[key]; ok {
+		return v.Expiry > 0 && v.Expiry < uint64(time.Now().UnixMilli())
+	}
+	return false
+}
+
+func (kv *kv) Export() map[string]Value {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+	exportedData := make(map[string]Value, len(kv.store))
+	for k, v := range kv.store {
+		exportedData[k] = v
+	}
+	return exportedData
 }

@@ -12,7 +12,7 @@ import (
 type ReplConf struct{}
 
 func (rc *ReplConf) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error {
-	if len(args) < 2 {
+	if len(args) < 1 {
 		return wr.WriteError(errors.New("wrong number of arguments for 'replconf' command"))
 	}
 
@@ -25,11 +25,10 @@ func (rc *ReplConf) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp
 		port := args[1].String()
 		c.ListeningPort = port
 	case "capa":
-		if len(args) != 2 {
+		if len(args) < 2 {
 			return wr.WriteError(errors.New("wrong number of arguments for 'replconf capa' command"))
 		}
-		// capability := args[1].String()
-		// Ignore capability for now
+		// We don't need to handle/save the capa arguments
 	default:
 		return wr.WriteError(fmt.Errorf("unknown replconf subcommand: %s", subCommand))
 	}

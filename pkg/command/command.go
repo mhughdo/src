@@ -16,6 +16,7 @@ var (
 
 type ServerInfoProvider interface {
 	GetReplicaInfo() []map[string]string
+	GetReplicationID() string
 }
 
 type Command interface {
@@ -74,6 +75,10 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			"xrange":   &XRange{kv: kv},
 			"xread":    &XRead{kv: kv},
 			"replconf": &ReplConf{},
+			"psync": &Psync{
+				serverInfo: serverInfo,
+			},
+			"save": &Save{kv: kv},
 		},
 	}
 }

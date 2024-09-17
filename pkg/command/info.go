@@ -7,7 +7,6 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
-	"github.com/codecrafters-io/redis-starter-go/pkg/utils"
 )
 
 const (
@@ -36,7 +35,7 @@ var sections = map[string]SectionInfo{
 	REPLICATION: {
 		DynamicFields: map[string]DynamicFieldHandler{
 			"role":               determineRole,
-			"master_replid":      generateMasterReplID,
+			"master_replid":      getMasterReplID,
 			"master_repl_offset": getMasterReplOffset,
 			"connected_slaves": func(cfg *config.Config, serverInfo ServerInfoProvider) string {
 				return fmt.Sprintf("%d", len(serverInfo.GetReplicaInfo()))
@@ -107,10 +106,6 @@ func determineRole(cfg *config.Config, _ ServerInfoProvider) string {
 	return "master"
 }
 
-func generateMasterReplID(_ *config.Config, _ ServerInfoProvider) string {
-	return utils.GenerateRandomAlphanumeric(40)
-}
-
 func getMasterReplOffset(_ *config.Config, _ ServerInfoProvider) string {
 	return "0"
 }
@@ -124,4 +119,8 @@ func buildReplicaInfo(cfg *config.Config, serverInfo ServerInfoProvider) string 
 			i, replica["id"], replica["addr"], replica["listening_port"]))
 	}
 	return sb.String()
+}
+
+func getMasterReplID(_ *config.Config, serverInfo ServerInfoProvider) string {
+	return serverInfo.GetReplicationID()
 }

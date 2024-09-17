@@ -38,6 +38,7 @@ type Server struct {
 	masterAddr     string
 	messageChan    chan client.Message
 	masterClient   *client.Client
+	replicationID  string
 	disconnectChan chan *client.Client
 }
 
@@ -50,6 +51,10 @@ func NewServer(cfg *config.Config) *Server {
 		parts := strings.Split(replicaOf, " ")
 		masterAddr = fmt.Sprintf("%s:%s", parts[0], parts[1])
 	}
+	var replicationID string
+	if isMaster {
+		replicationID = utils.GenerateRandomAlphanumeric(40)
+	}
 	s := &Server{
 		mu:             sync.Mutex{},
 		cfg:            cfg,
@@ -61,6 +66,7 @@ func NewServer(cfg *config.Config) *Server {
 		masterAddr:     masterAddr,
 		messageChan:    make(chan client.Message),
 		masterClient:   nil,
+		replicationID:  replicationID,
 		disconnectChan: make(chan *client.Client),
 	}
 	s.cFactory = command.NewCommandFactory(store, cfg, s)
@@ -160,6 +166,10 @@ func (s *Server) startReplication(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to send REPLCONF to master: %v", err)
 	}
 
+	if err := s.sendPsyncToMaster(ctx); err != nil {
+		return fmt.Errorf("failed to send PSYNC to master: %v", err)
+	}
+
 	return nil
 }
 
@@ -219,6 +229,21 @@ func (s *Server) sendReplconfToMaster(ctx context.Context) error {
 	}
 
 	logger.Info(ctx, "Successfully sent REPLCONF commands to master")
+	return nil
+}
+
+func (s *Server) sendPsyncToMaster(ctx context.Context) error {
+	psyncCmd := resp.CreatePsyncCommand("?", "-1")
+	response, err := s.sendAndReceive(psyncCmd)
+	if err != nil {
+		return fmt.Errorf("failed to send PSYNC to master: %v", err)
+	}
+
+	if response.Type != resp.SimpleString || !strings.HasPrefix(response.String(), "FULLRESYNC") {
+		return fmt.Errorf("unexpected response from master for PSYNC: %v", response)
+	}
+
+	logger.Info(ctx, "Successfully sent PSYNC to master and received FULLRESYNC")
 	return nil
 }
 
@@ -341,4 +366,10 @@ func (s *Server) Close(_ context.Context) error {
 		return fmt.Errorf("failed to close listener: %w", err)
 	}
 	return nil
+}
+
+func (s *Server) GetReplicationID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.replicationID
 }
