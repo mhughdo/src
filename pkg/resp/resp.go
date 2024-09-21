@@ -252,12 +252,19 @@ func (r *Resp) parseBulkString(line []byte) ([]byte, int, error) {
 	if n == -1 {
 		return []byte{}, n, nil
 	}
-	b := make([]byte, n+2)
-	_, err = io.ReadFull(r.rd, b)
+	data := make([]byte, n)
+	_, err = io.ReadFull(r.rd, data)
 	if err != nil {
-		return []byte{}, n, err
+		return nil, n, err
 	}
-	return b[:n], n, nil
+	// Attempt to read the trailing CRLF
+	crlf := make([]byte, 2)
+	_, err = io.ReadFull(r.rd, crlf)
+	if err != nil && err != io.EOF {
+		return nil, n, err
+	}
+
+	return data, n, nil
 }
 
 // func (r *RESP) parseVerbatimString(line []byte) ([]byte, error) {
