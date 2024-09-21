@@ -1,12 +1,15 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,20 +29,32 @@ const (
 )
 
 type Server struct {
-	ln             net.Listener
-	mu             sync.Mutex
-	cfg            *config.Config
-	done           chan struct{}
-	store          keyval.KV
-	clients        map[*client.Client]struct{}
-	cFactory       *command.CommandFactory
-	isMaster       bool
-	replicas       map[*client.Client]struct{}
-	masterAddr     string
-	messageChan    chan client.Message
-	masterClient   *client.Client
-	replicationID  string
-	disconnectChan chan *client.Client
+	ln                net.Listener
+	mu                sync.Mutex
+	cfg               *config.Config
+	done              chan struct{}
+	store             keyval.KV
+	queueMu           sync.Mutex
+	clients           map[*client.Client]struct{}
+	cFactory          *command.CommandFactory
+	isMaster          bool
+	replicas          map[*client.Client]struct{}
+	masterAddr        string
+	messageChan       chan client.Message
+	commandChan       chan commandRequest
+	masterClient      *client.Client
+	replicationID     string
+	disconnectChan    chan *client.Client
+	responseWaitQueue []*responseRequest
+}
+
+type commandRequest struct {
+	cmd    []byte
+	respCh chan *resp.Resp
+}
+
+type responseRequest struct {
+	respCh chan *resp.Resp
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -56,18 +71,20 @@ func NewServer(cfg *config.Config) *Server {
 		replicationID = utils.GenerateRandomAlphanumeric(40)
 	}
 	s := &Server{
-		mu:             sync.Mutex{},
-		cfg:            cfg,
-		done:           make(chan struct{}),
-		store:          store,
-		clients:        make(map[*client.Client]struct{}),
-		isMaster:       isMaster,
-		replicas:       make(map[*client.Client]struct{}),
-		masterAddr:     masterAddr,
-		messageChan:    make(chan client.Message),
-		masterClient:   nil,
-		replicationID:  replicationID,
-		disconnectChan: make(chan *client.Client),
+		mu:                sync.Mutex{},
+		cfg:               cfg,
+		done:              make(chan struct{}),
+		store:             store,
+		clients:           make(map[*client.Client]struct{}),
+		isMaster:          isMaster,
+		replicas:          make(map[*client.Client]struct{}),
+		masterAddr:        masterAddr,
+		messageChan:       make(chan client.Message),
+		commandChan:       make(chan commandRequest),
+		masterClient:      nil,
+		replicationID:     replicationID,
+		disconnectChan:    make(chan *client.Client),
+		responseWaitQueue: []*responseRequest{},
 	}
 	s.cFactory = command.NewCommandFactory(store, cfg, s)
 	return s
@@ -100,9 +117,20 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		s.store.RestoreRDB(rdb.GetData())
 	}
-	if err := s.startReplication(ctx); err != nil {
-		return fmt.Errorf("failed to start replication: %v", err)
+
+	if !s.isMaster {
+		conn, err := net.Dial("tcp", s.masterAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to master, err: %v", err)
+		}
+		s.masterClient = client.NewClient(conn, nil)
+		go s.commandSender(ctx)
+		go s.handleMasterConnection(ctx)
+		if err := s.startReplication(ctx); err != nil {
+			return fmt.Errorf("failed to start replication: %v", err)
+		}
 	}
+
 	if err := s.Listen(ctx); err != nil {
 		return fmt.Errorf("failed to listen, err: %v", err)
 	}
@@ -122,6 +150,157 @@ func (s *Server) Listen(ctx context.Context) error {
 	logger.Info(ctx, "Ready to accept connections tcp on %s", listenAddr)
 	go s.loop(ctx)
 	return s.acceptConnection(ctx)
+}
+
+func (s *Server) handleMasterConnection(ctx context.Context) {
+	defer func() {
+		if s.masterClient != nil {
+			s.masterClient.Close(ctx)
+		}
+	}()
+	reader := bufio.NewReader(s.masterClient.Conn())
+	buffer := &bytes.Buffer{}
+
+	for {
+		select {
+		case <-s.done:
+			return
+		default:
+			part, err := reader.ReadBytes('\n')
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+					logger.Info(ctx, "Master connection closed")
+					return
+				}
+				logger.Error(ctx, "Error reading from master: %v", err)
+				return
+			}
+
+			buffer.Write(part)
+			respReader := resp.NewResp(bytes.NewReader(buffer.Bytes()))
+			r, err := respReader.ParseResp()
+			if err != nil {
+				if strings.Contains(err.Error(), "unexpected EOF") {
+					continue
+				}
+				if errors.Is(err, resp.ErrEmptyLine) {
+					continue
+				}
+				if errors.Is(err, resp.ErrIncompleteInput) || errors.Is(err, resp.ErrUnknownType) || errors.Is(err, io.EOF) {
+					continue
+				}
+				logger.Error(ctx, "Failed to parse response from master: %v", err)
+				buffer.Reset()
+				continue
+			}
+			s.dispatchResponse(r)
+			s.handleMasterResponse(ctx, r, reader)
+			buffer.Reset()
+		}
+	}
+}
+
+func (s *Server) receiveRDB(ctx context.Context, reader *bufio.Reader) {
+	for {
+		select {
+		case <-s.done:
+			return
+		default:
+			header, err := reader.ReadBytes('\n')
+			if err != nil {
+				logger.Error(ctx, "Failed to read RDB header: %v", err)
+				return
+			}
+
+			if !bytes.HasPrefix(header, []byte("$")) {
+				logger.Error(ctx, "Invalid RDB header: %s", header)
+				return
+			}
+
+			lengthStr := string(header[1 : len(header)-2])
+			length, err := strconv.Atoi(lengthStr)
+			if err != nil {
+				logger.Error(ctx, "Invalid RDB length: %v", err)
+				return
+			}
+
+			rdbData := make([]byte, length)
+			_, err = io.ReadFull(reader, rdbData)
+			if err != nil {
+				logger.Error(ctx, "Failed to read RDB data: %v", err)
+				return
+			}
+			rdbParser := rdb.NewRDBParser(bytes.NewReader(rdbData))
+			if err := rdbParser.ParseRDB(ctx); err != nil {
+				logger.Error(ctx, "Failed to parse RDB data: %v", err)
+				return
+			}
+			storeData := rdbParser.GetData()
+			if len(storeData) == 0 {
+				logger.Info(ctx, "Received empty RDB file from master")
+				return
+			}
+			s.store.RestoreRDB(rdbParser.GetData())
+			logger.Info(ctx, "Successfully received and restored RDB file from master")
+			return
+		}
+	}
+}
+
+func (s *Server) handleMasterResponse(ctx context.Context, r *resp.Resp, reader *bufio.Reader) {
+	switch r.Type {
+	case resp.SimpleString:
+		if strings.Contains(r.String(), "FULLRESYNC") {
+			s.receiveRDB(ctx, reader)
+		}
+	case resp.Array:
+	case resp.BulkString:
+	case resp.SimpleError, resp.BulkError:
+		errMsg := r.String()
+		logger.Error(ctx, "Error from master: %s", errMsg)
+	default:
+		logger.Warn(ctx, "Unhandled RESP type from master: %c", r.Type)
+	}
+}
+
+func (s *Server) commandSender(ctx context.Context) {
+	for {
+		select {
+		case <-s.done:
+			return
+		case req := <-s.commandChan:
+			_, err := s.masterClient.Writer.Write(req.cmd)
+			if err != nil {
+				logger.Error(ctx, "Failed to write command to master: %v", err)
+				close(req.respCh)
+				continue
+			}
+			err = s.masterClient.Writer.Flush()
+			if err != nil {
+				logger.Error(ctx, "Failed to flush command to master: %v", err)
+				close(req.respCh)
+				continue
+			}
+
+			s.queueMu.Lock()
+			s.responseWaitQueue = append(s.responseWaitQueue, &responseRequest{respCh: req.respCh})
+			s.queueMu.Unlock()
+		}
+	}
+}
+
+func (s *Server) dispatchResponse(r *resp.Resp) {
+	s.queueMu.Lock()
+	if len(s.responseWaitQueue) == 0 {
+		s.queueMu.Unlock()
+		return
+	}
+	req := s.responseWaitQueue[0]
+	s.responseWaitQueue = s.responseWaitQueue[1:]
+	s.queueMu.Unlock()
+
+	req.respCh <- r
+	close(req.respCh)
 }
 
 func (s *Server) acceptConnection(ctx context.Context) error {
@@ -149,15 +328,6 @@ func (s *Server) startReplication(ctx context.Context) (err error) {
 		}
 	}()
 
-	if s.isMaster {
-		return nil
-	}
-	conn, err := net.Dial("tcp", s.masterAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to master: %v", err)
-	}
-	s.masterClient = client.NewClient(conn, nil)
-
 	if err := s.sendPingToMaster(ctx); err != nil {
 		return fmt.Errorf("failed to send PING to master: %v", err)
 	}
@@ -175,76 +345,85 @@ func (s *Server) startReplication(ctx context.Context) (err error) {
 
 func (s *Server) sendPingToMaster(ctx context.Context) error {
 	pingCmd := resp.CreatePingCommand()
-	response, err := s.sendAndReceive(pingCmd)
-	if err != nil {
-		return fmt.Errorf("failed to read response from master: %v", err)
+	if err := s.sendCommandAndCheckOK(ctx, pingCmd, "PING"); err != nil {
+		return err
 	}
-	if response.Type != resp.SimpleString || response.String() != "PONG" {
-		return fmt.Errorf("unexpected response from master: %v", response)
-	}
-
-	logger.Info(ctx, "Successfully sent PING to master and received PONG")
+	logger.Info(ctx, "Successfully sent PING to master")
 	return nil
 }
 
-func (s *Server) sendAndReceive(cmd []byte) (*resp.Resp, error) {
-	if _, err := s.masterClient.Writer.Write(cmd); err != nil {
-		return nil, err
-	}
-	if err := s.masterClient.Writer.Flush(); err != nil {
-		return nil, err
-	}
-	conn := s.masterClient.Conn()
-	err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		return nil, fmt.Errorf("failed to set read deadline: %v", err)
-	}
-	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		return nil, err
-	}
-	reader := resp.NewResp(bytes.NewReader(buffer[:n]))
-	response, err := reader.ParseResp()
-	if err != nil {
-		return nil, err
-	}
-	return response, nil
-}
-
 func (s *Server) sendReplconfToMaster(ctx context.Context) error {
-	// Send REPLCONF listening-port
 	port, _ := s.cfg.Get(config.ListenAddrKey)
 	port = strings.TrimPrefix(port, ":")
 	replconfPort := resp.CreateReplconfCommand("listening-port", port)
-	response, err := s.sendAndReceive(replconfPort)
-	if err != nil || response.Type != resp.SimpleString || response.String() != "OK" {
-		return fmt.Errorf("unexpected response from master for REPLCONF listening-port: %v", response)
+
+	if err := s.sendCommandAndCheckOK(ctx, replconfPort, "REPLCONF listening-port"); err != nil {
+		return err
 	}
 
 	replconfCapa := resp.CreateReplconfCommand("capa", "psync2")
-	response, err = s.sendAndReceive(replconfCapa)
-	if err != nil || response.Type != resp.SimpleString || response.String() != "OK" {
-		return fmt.Errorf("unexpected response from master for REPLCONF capa psync2: %v", response)
+	if err := s.sendCommandAndCheckOK(ctx, replconfCapa, "REPLCONF capa psync2"); err != nil {
+		return err
 	}
 
 	logger.Info(ctx, "Successfully sent REPLCONF commands to master")
 	return nil
 }
 
+func (s *Server) sendCommandAndCheckOK(ctx context.Context, cmd []byte, cmdName string) error {
+	respCh := make(chan *resp.Resp, 1)
+	req := commandRequest{
+		cmd:    cmd,
+		respCh: respCh,
+	}
+
+	select {
+	case s.commandChan <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case r := <-respCh:
+		if r == nil {
+			return fmt.Errorf("failed to send %s command", cmdName)
+		}
+		if r.Type != resp.SimpleString || (r.String() != "OK" && r.String() != "PONG") {
+			return fmt.Errorf("unexpected response for %s: %v", cmdName, r)
+		}
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout waiting for %s response", cmdName)
+	}
+}
+
 func (s *Server) sendPsyncToMaster(ctx context.Context) error {
 	psyncCmd := resp.CreatePsyncCommand("?", "-1")
-	response, err := s.sendAndReceive(psyncCmd)
-	if err != nil {
-		return fmt.Errorf("failed to send PSYNC to master: %v", err)
+	respCh := make(chan *resp.Resp, 1)
+	req := commandRequest{
+		cmd:    psyncCmd,
+		respCh: respCh,
 	}
 
-	if response.Type != resp.SimpleString || !strings.HasPrefix(response.String(), "FULLRESYNC") {
-		return fmt.Errorf("unexpected response from master for PSYNC: %v", response)
+	select {
+	case s.commandChan <- req:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
-	logger.Info(ctx, "Successfully sent PSYNC to master and received FULLRESYNC")
-	return nil
+	select {
+	case r := <-respCh:
+		if r == nil {
+			return fmt.Errorf("failed to send PSYNC command")
+		}
+		if r.Type != resp.SimpleString || !strings.HasPrefix(r.String(), "FULLRESYNC") {
+			return fmt.Errorf("unexpected response for PSYNC: %v", r)
+		}
+		logger.Info(ctx, "Successfully sent PSYNC to master and received FULLRESYNC")
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout waiting for PSYNC response")
+	}
 }
 
 func (s *Server) loop(ctx context.Context) {
