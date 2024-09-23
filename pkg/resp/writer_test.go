@@ -132,7 +132,7 @@ func TestWriteResp2Value(t *testing.T) {
 		{
 			name:    "Integer",
 			value:   1000,
-			want:    []byte("$4\r\n1000\r\n"),
+			want:    []byte(":1000\r\n"),
 			wantErr: nil,
 		},
 		{
@@ -166,7 +166,7 @@ func TestWriteResp2Value(t *testing.T) {
 			}
 
 			if !bytes.Equal(buf.Bytes(), tt.want) {
-				t.Errorf("WriteValue() = %v, want %v", buf.Bytes(), tt.want)
+				t.Errorf("WriteValue() = %s, want %s", buf.Bytes(), tt.want)
 			}
 		})
 	}

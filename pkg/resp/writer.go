@@ -137,14 +137,14 @@ func (w *Writer) writeResp2Value(value any) error {
 		return w.writeResp2Float(*v)
 	case bool:
 		if v {
-			return w.writeInt(1)
+			return w.WriteString("1")
 		}
-		return w.writeInt(0)
+		return w.WriteString("0")
 	case *bool:
 		if *v {
-			return w.writeInt(1)
+			return w.WriteString("1")
 		}
-		return w.writeInt(0)
+		return w.WriteString("0")
 	case time.Time:
 		w.numBuf = v.AppendFormat(w.numBuf[:0], time.RFC3339Nano)
 		return w.writeBytesWithType(BulkString, w.numBuf)
