@@ -31,8 +31,7 @@ func (w *Wait) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) err
 	clientOffset := c.GetLastWriteOffset()
 	// If there's no pending writes, return immediately
 	if clientOffset == 0 {
-		// TODO: Set this to: return wr.WriteSimpleValue(resp.Integer, []byte("0"))
-		return wr.WriteSimpleValue(resp.Integer, []byte(strconv.Itoa(len(w.serverInfo.GetReplicaInfo()))))
+		return wr.WriteSimpleValue(resp.Integer, []byte("0"))
 	}
 
 	// Start waiting for replicas to acknowledge up to clientOffset
@@ -52,12 +51,7 @@ func (w *Wait) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) err
 
 		elapsed := time.Since(startTime)
 		if elapsed >= timeout {
-			// TODO: Set this to: return wr.WriteSimpleValue(resp.Integer, []byte(strconv.Itoa(len(w.serverInfo.GetReplicaInfo()))))
-			count := []byte(strconv.Itoa(len(w.serverInfo.GetReplicaInfo())))
-			if ackedReplicas > 0 {
-				count = []byte(strconv.Itoa(ackedReplicas))
-			}
-			return wr.WriteSimpleValue(resp.Integer, count)
+			return wr.WriteSimpleValue(resp.Integer, []byte(strconv.Itoa(len(w.serverInfo.GetReplicaInfo()))))
 		}
 
 		// Sleep briefly before checking again
