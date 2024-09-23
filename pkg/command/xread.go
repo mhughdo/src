@@ -78,7 +78,7 @@ func (x *XRead) parseArgs(args []*resp.Resp) (*XReadOptions, error) {
 			i++
 			streamCount := (len(args) - i) / 2
 			if streamCount <= 0 || (len(args)-i)%2 != 0 {
-				return nil, errors.New("ERR Unbalanced 'xread' list of streams: for each stream key an ID or '$' must be specified.")
+				return nil, errors.New("ERR Unbalanced 'xread' list of streams: for each stream key an ID or '$' must be specified")
 			}
 			x.streamOrder = make([]string, streamCount)
 			for j := 0; j < streamCount; j++ {

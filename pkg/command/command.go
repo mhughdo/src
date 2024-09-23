@@ -83,6 +83,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			"wait": &Wait{
 				serverInfo: serverInfo,
 			},
+			"incr": &Incr{kv: kv},
 		},
 	}
 }
