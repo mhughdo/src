@@ -1,34 +1,53 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/3ead01d3-22b1-4721-8ca3-9fe814dc91ae)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# SRC (Simple Redis Clone)
 
-This is a starting point for Go solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+A simple Redis clone written in Go. 
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+## Running the server
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- Run as a master: `go run app/server.go`
+- Run as a replica:
+  ` go run app/server.go --port 6380 --replicaof "localhost 6379"`
 
-# Passing the first stage
+## Features
 
-The entry point for your Redis implementation is in `app/server.go`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+### Supported commands
 
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
-```
+### String
 
-That's all!
+- SET
+- GET
+- INCR
 
-# Stage 2 & beyond
+### Transactions
 
-Note: This section is for stages 2 and beyond.
+- MULTI
+- EXEC
+- DISCARD
 
-1. Ensure you have `go (1.19)` installed locally
-1. Run `./spawn_redis_server.sh` to run your Redis server, which is implemented
-   in `app/server.go`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+### Generic
+
+- KEYS
+- TYPE
+- CONFIG
+
+### Connection
+
+- PING
+- HELLO
+- INFO
+- CLIENT
+
+### Streams
+
+- XADD
+- XLEN
+- XREAD
+
+### Replication
+
+Partial support for master-replica replication.
+
+- SAVE
+- PSYNC
+- REPLCONF
+- WAIT
