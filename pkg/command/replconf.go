@@ -40,6 +40,7 @@ func (rc *ReplConf) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp
 			return wr.WriteError(fmt.Errorf("invalid offset in REPLCONF ACK: %v", err))
 		}
 		c.UpdateOffset(offset)
+		return nil
 	default:
 		return wr.WriteError(fmt.Errorf("unknown replconf subcommand: %s", subCommand))
 	}
