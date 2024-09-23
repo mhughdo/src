@@ -254,6 +254,19 @@ func (s *Server) handleMasterResponse(ctx context.Context, r *resp.Resp, reader 
 			s.receiveRDB(ctx, reader)
 		}
 	case resp.Array:
+		cmdName := strings.ToLower(r.Data.([]*resp.Resp)[0].String())
+		args := r.Data.([]*resp.Resp)[1:]
+		cmd, err := s.cFactory.GetCommand(cmdName)
+		if err != nil {
+			logger.Error(ctx, "Unknown command from master: %s", cmdName)
+			return
+		}
+		logger.Info(ctx, "Received command from master, cmd: %s, args: %v", cmdName, args)
+		tmpWriter := resp.NewWriter(&bytes.Buffer{}, resp.RESP3)
+		err = cmd.Execute(s.masterClient, tmpWriter, args)
+		if err != nil {
+			logger.Error(ctx, "Failed to execute command from master: %v", err)
+		}
 	case resp.BulkString:
 	case resp.SimpleError, resp.BulkError:
 		errMsg := r.String()
@@ -478,11 +491,30 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 		cl.Writer.Reset()
 		return s.writeError(cl, err)
 	}
+	if _, ok := config.WriteableCommands[cmdName]; ok {
+		s.propagateCommand(ctx, r)
+	}
 	if cmdName == "replconf" && len(args) > 0 && args[0].String() == "listening-port" {
 		s.addReplica(cl)
 	}
 
 	return nil
+}
+
+func (s *Server) propagateCommand(ctx context.Context, r *resp.Resp) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Send the command to each replica
+	for replica := range s.replicas {
+		_, err := replica.Conn().Write(r.RAW())
+		if err != nil {
+			logger.Error(ctx, "Failed to send command to replica %s: %v", replica.ID, err)
+			// Remove disconnected replica
+			delete(s.replicas, replica)
+			replica.Close(ctx)
+		}
+	}
 }
 
 func (s *Server) addReplica(c *client.Client) {

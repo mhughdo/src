@@ -14,6 +14,13 @@ const (
 	ReplicaOfKey  = "REPLICAOF"
 )
 
+var (
+	WriteableCommands = map[string]struct{}{
+		"set": {},
+		"del": {},
+	}
+)
+
 var supportedOptions = map[string]struct{}{
 	ListenAddrKey: {},
 	DirKey:        {},
