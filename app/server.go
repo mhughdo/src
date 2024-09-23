@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/app/server"
-	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
-	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
+	"github.com/mhughdo/src/internal/app/server"
+	"github.com/mhughdo/src/internal/app/server/config"
+	"github.com/mhughdo/src/pkg/telemetry/logger"
 )
 
 var (

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
-	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
+	"github.com/mhughdo/src/pkg/resp"
+	"github.com/mhughdo/src/pkg/telemetry/logger"
 )
 
 type Message struct {

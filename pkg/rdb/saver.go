@@ -7,8 +7,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/crc64"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
+	"github.com/mhughdo/src/pkg/crc64"
+	"github.com/mhughdo/src/pkg/keyval"
 )
 
 type RDBSaver struct {

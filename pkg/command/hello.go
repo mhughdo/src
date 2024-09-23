@@ -3,8 +3,8 @@ package command
 import (
 	"errors"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/client"
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/resp"
 )
 
 const (

@@ -12,9 +12,9 @@ import (
 
 	lzf "github.com/zhuyie/golzf"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/crc64"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
-	"github.com/codecrafters-io/redis-starter-go/pkg/telemetry/logger"
+	"github.com/mhughdo/src/pkg/crc64"
+	"github.com/mhughdo/src/pkg/keyval"
+	"github.com/mhughdo/src/pkg/telemetry/logger"
 )
 
 const (

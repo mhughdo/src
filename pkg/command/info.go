@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
-	"github.com/codecrafters-io/redis-starter-go/internal/client"
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/mhughdo/src/internal/app/server/config"
+	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/resp"
 )
 
 const (
