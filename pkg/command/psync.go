@@ -1,19 +1,20 @@
 package command
 
 import (
-	"encoding/hex"
+	"bytes"
 	"errors"
 	"fmt"
 
 	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/keyval"
+	"github.com/mhughdo/src/pkg/rdb"
 	"github.com/mhughdo/src/pkg/resp"
 )
 
 type Psync struct {
 	serverInfo ServerInfoProvider
+	kv         keyval.KV
 }
-
-var emptyRDB, _ = hex.DecodeString("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
 
 func (p *Psync) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) error {
 	if len(args) != 2 {
@@ -36,8 +37,15 @@ func (p *Psync) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) er
 	if err != nil {
 		return err
 	}
-	emptyRDBResponse := fmt.Sprintf("$%d\r\n%s", len(emptyRDB), emptyRDB)
-	_, err = c.Conn().Write([]byte(emptyRDBResponse))
+	rdbSaver := rdb.NewRDBSaver(p.kv.Export())
+	buf := &bytes.Buffer{}
+	err = rdbSaver.SaveRDB(buf)
+	if err != nil {
+		return err
+	}
+	rdbData := buf.String()
+	rdbRes := fmt.Sprintf("$%d\r\n%s", len(rdbData), rdbData)
+	_, err = c.Conn().Write([]byte(rdbRes))
 	if err != nil {
 		return err
 	}

@@ -204,6 +204,22 @@ func (s *RDBSaver) SaveRDB(wr io.Writer) error {
 		return err
 	}
 
+	if err := s.writeByte(RDBMarkerResizeDB); err != nil {
+		return err
+	}
+	expirySize := 0
+	for _, val := range s.data {
+		if val.Expiry > 0 {
+			expirySize++
+		}
+	}
+	if err := s.writeLength(uint64(len(s.data))); err != nil {
+		return err
+	}
+	if err := s.writeLength(uint64(expirySize)); err != nil {
+		return err
+	}
+
 	// Write key-value pairs
 	for key, val := range s.data {
 		if err := s.writeObject(key, val); err != nil {

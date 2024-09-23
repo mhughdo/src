@@ -74,8 +74,8 @@ func NewStore() KV {
 }
 
 func (kv *kv) Get(key string) []byte {
-	kv.mu.RLock()
-	defer kv.mu.RUnlock()
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	if kv.isExpired(key) {
 		delete(kv.store, key)
 		return nil
