@@ -25,7 +25,9 @@ import (
 )
 
 const (
-	defaultListenAddr = ":6379"
+	defaultListenAddr      = ":6379"
+	replicaPingInterval    = 45 * time.Second
+	replconfGetAckInterval = 30 * time.Second
 )
 
 type Server struct {
@@ -34,6 +36,7 @@ type Server struct {
 	cfg               *config.Config
 	done              chan struct{}
 	store             keyval.KV
+	offset            uint64
 	queueMu           sync.Mutex
 	clients           map[*client.Client]struct{}
 	cFactory          *command.CommandFactory
@@ -129,6 +132,9 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := s.startReplication(ctx); err != nil {
 			return fmt.Errorf("failed to start replication: %v", err)
 		}
+	} else {
+		go s.pingReplicas(ctx)
+		go s.sendReplConfGetAck(ctx)
 	}
 
 	if err := s.Listen(ctx); err != nil {
@@ -195,6 +201,9 @@ func (s *Server) handleMasterConnection(ctx context.Context) {
 			}
 			s.dispatchResponse(r)
 			s.handleMasterResponse(ctx, r, reader)
+			if r.Type == resp.Array {
+				s.offset += uint64(len(buffer.Bytes()))
+			}
 			buffer.Reset()
 		}
 	}
@@ -256,16 +265,19 @@ func (s *Server) handleMasterResponse(ctx context.Context, r *resp.Resp, reader 
 	case resp.Array:
 		cmdName := strings.ToLower(r.Data.([]*resp.Resp)[0].String())
 		args := r.Data.([]*resp.Resp)[1:]
-		cmd, err := s.cFactory.GetCommand(cmdName)
-		if err != nil {
-			logger.Error(ctx, "Unknown command from master: %s", cmdName)
-			return
-		}
-		logger.Info(ctx, "Received command from master, cmd: %s, args: %v", cmdName, args)
-		tmpWriter := resp.NewWriter(&bytes.Buffer{}, resp.RESP3)
-		err = cmd.Execute(s.masterClient, tmpWriter, args)
-		if err != nil {
-			logger.Error(ctx, "Failed to execute command from master: %v", err)
+		if cmdName == "replconf" && len(args) >= 2 && strings.ToLower(args[0].String()) == "getack" && args[1].String() == "*" {
+			s.respondToGetAck(ctx)
+		} else {
+			cmd, err := s.cFactory.GetCommand(cmdName)
+			if err != nil {
+				logger.Error(ctx, "Unknown command from master: %s", cmdName)
+				return
+			}
+			tmpWriter := resp.NewWriter(&bytes.Buffer{}, resp.RESP3)
+			err = cmd.Execute(s.masterClient, tmpWriter, args)
+			if err != nil {
+				logger.Error(ctx, "Failed to execute command from master: %v", err)
+			}
 		}
 	case resp.BulkString:
 	case resp.SimpleError, resp.BulkError:
@@ -273,6 +285,19 @@ func (s *Server) handleMasterResponse(ctx context.Context, r *resp.Resp, reader 
 		logger.Error(ctx, "Error from master: %s", errMsg)
 	default:
 		logger.Warn(ctx, "Unhandled RESP type from master: %c", r.Type)
+	}
+}
+
+func (s *Server) respondToGetAck(ctx context.Context) {
+	ackMessage := resp.CreateCommand("REPLCONF", "ACK", strconv.FormatUint(s.offset, 10))
+	_, err := s.masterClient.Writer.Write(ackMessage)
+	if err != nil {
+		logger.Error(ctx, "Failed to write REPLCONF ACK to master: %v", err)
+	}
+
+	err = s.masterClient.Writer.Flush()
+	if err != nil {
+		logger.Error(ctx, "Failed to flush REPLCONF ACK to master: %v", err)
 	}
 }
 
@@ -515,6 +540,98 @@ func (s *Server) propagateCommand(ctx context.Context, r *resp.Resp) {
 			replica.Close(ctx)
 		}
 	}
+}
+
+func (s *Server) pingReplicas(ctx context.Context) {
+	ticker := time.NewTicker(replicaPingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			for replica := range s.replicas {
+				go func(replica *client.Client) {
+					err := s.sendPing(replica)
+					if err != nil {
+						logger.Error(ctx, "Failed to ping replica %s: %v", replica.ID, err)
+						s.removeReplica(ctx, replica)
+					} else {
+						// logger.Info(ctx, "Successfully pinged replica %s", replica.ID)
+					}
+				}(replica)
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
+func (s *Server) sendReplConfGetAck(ctx context.Context) {
+	ticker := time.NewTicker(replconfGetAckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			replicas := make([]*client.Client, 0, len(s.replicas))
+			for replica := range s.replicas {
+				replicas = append(replicas, replica)
+			}
+			s.mu.Unlock()
+
+			for _, replica := range replicas {
+				go func(replica *client.Client) {
+					getAckCmd := resp.CreateCommand("REPLCONF", "GETACK", "*")
+					_, err := replica.Writer.Write(getAckCmd)
+					if err != nil {
+						logger.Error(ctx, "Failed to write REPLCONF GETACK to replica %s: %v", replica.ID, err)
+						s.removeReplica(ctx, replica)
+						return
+					}
+					err = replica.Writer.Flush()
+					if err != nil {
+						if errors.Is(err, net.ErrClosed) {
+							logger.Info(ctx, "Failed to flush REPLCONF GETACK to replica %s, replica disconnected", replica.ID)
+						} else {
+							logger.Error(ctx, "Failed to flush REPLCONF GETACK to replica %s: %v", replica.ID, err)
+						}
+						s.removeReplica(ctx, replica)
+						return
+					}
+				}(replica)
+			}
+		}
+	}
+}
+
+func (s *Server) sendPing(replica *client.Client) error {
+	pingCmd := resp.CreatePingCommand()
+
+	_, err := replica.Conn().Write(pingCmd)
+	if err != nil {
+		return fmt.Errorf("error sending PING to replica %s: %w", replica.ID, err)
+	}
+
+	err = replica.Writer.Flush()
+	if err != nil {
+		return fmt.Errorf("error flushing PING to replica %s: %w", replica.ID, err)
+	}
+
+	return nil
+}
+
+func (s *Server) removeReplica(ctx context.Context, replica *client.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.replicas, replica)
+	replica.Close(ctx)
+	logger.Info(ctx, "Removed replica %s due to failed PING", replica.ID)
 }
 
 func (s *Server) addReplica(c *client.Client) {

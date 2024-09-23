@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
@@ -26,6 +27,8 @@ type Info struct {
 
 type Client struct {
 	ID                   string
+	offset               uint64
+	mu                   sync.RWMutex
 	conn                 net.Conn
 	authenticated        bool
 	info                 Info
@@ -49,6 +52,18 @@ func NewClient(conn net.Conn, messageChan chan<- Message) *Client {
 		bw:              bw,
 		Writer:          resp.NewWriter(bw, resp.DefaultVersion),
 	}
+}
+
+func (c *Client) UpdateOffset(offset uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset = offset
+}
+
+func (c *Client) Offset() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.offset
 }
 
 func (c *Client) SetRespVersion(version resp.RESPVersion) {
