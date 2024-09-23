@@ -370,6 +370,42 @@ func parseLen(line []byte) (int, error) {
 	return n, nil
 }
 
+func (r *Resp) RAW() []byte {
+	switch r.Type {
+	case SimpleString, SimpleError, Integer, Null, Boolean, Double, BigNumber:
+		return []byte(fmt.Sprintf("%c%s\r\n", r.Type, r))
+	case BulkString, BulkError, VerbatimString:
+		if r.Data == nil {
+			return []byte("$-1\r\n")
+		}
+		data := r.Data.([]byte)
+		return []byte(fmt.Sprintf("%c%d\r\n%s\r\n", r.Type, len(data), data))
+	case Array, Pushes, Set:
+		if r.Data == nil {
+			return []byte("*-1\r\n")
+		}
+		elements := r.Data.([]*Resp)
+		b := []byte(fmt.Sprintf("%c%d\r\n", r.Type, len(elements)))
+		for _, elem := range elements {
+			b = append(b, elem.RAW()...)
+		}
+		return b
+	case Map:
+		if r.Data == nil {
+			return []byte("%0\r\n")
+		}
+		m := r.Data.(map[string]*Resp)
+		b := []byte(fmt.Sprintf("%c%d\r\n", r.Type, len(m)))
+		for k, v := range m {
+			b = append(b, []byte(fmt.Sprintf("+%s\r\n", k))...)
+			b = append(b, v.RAW()...)
+		}
+		return b
+	default:
+		return []byte{}
+	}
+}
+
 func (r *Resp) ToResponse() []byte {
 	switch r.Type {
 	case SimpleString, SimpleError, Integer, Null, Boolean, Double, BigNumber:

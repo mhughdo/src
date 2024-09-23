@@ -25,9 +25,9 @@ func (rc *ReplConf) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp
 		port := args[1].String()
 		c.ListeningPort = port
 	case "capa":
-		if len(args) < 2 {
-			return wr.WriteError(errors.New("wrong number of arguments for 'replconf capa' command"))
-		}
+		// if len(args) < 2 {
+		// 	return wr.WriteError(errors.New("wrong number of arguments for 'replconf capa' command"))
+		// }
 		// We don't need to handle/save the capa arguments
 	default:
 		return wr.WriteError(fmt.Errorf("unknown replconf subcommand: %s", subCommand))
