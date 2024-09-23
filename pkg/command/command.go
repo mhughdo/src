@@ -17,6 +17,7 @@ var (
 type ServerInfoProvider interface {
 	GetReplicaInfo() []map[string]string
 	GetReplicationID() string
+	GetReplicaAcknowledgedCount(offset uint64) int
 }
 
 type Command interface {
@@ -79,6 +80,9 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 				serverInfo: serverInfo,
 			},
 			"save": &Save{kv: kv},
+			"wait": &Wait{
+				serverInfo: serverInfo,
+			},
 		},
 	}
 }

@@ -40,6 +40,7 @@ type Client struct {
 	messageChan          chan<- Message
 	Writer               *resp.Writer
 	closed               bool
+	lastWriteOffset      uint64
 }
 
 func NewClient(conn net.Conn, messageChan chan<- Message) *Client {
@@ -51,7 +52,20 @@ func NewClient(conn net.Conn, messageChan chan<- Message) *Client {
 		messageChan:     messageChan,
 		bw:              bw,
 		Writer:          resp.NewWriter(bw, resp.DefaultVersion),
+		mu:              sync.RWMutex{},
 	}
+}
+
+func (c *Client) GetLastWriteOffset() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastWriteOffset
+}
+
+func (c *Client) SetLastWriteOffset(offset uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastWriteOffset = offset
 }
 
 func (c *Client) UpdateOffset(offset uint64) {

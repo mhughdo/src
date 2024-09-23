@@ -32,7 +32,7 @@ const (
 
 type Server struct {
 	ln                net.Listener
-	mu                sync.Mutex
+	mu                sync.RWMutex
 	cfg               *config.Config
 	done              chan struct{}
 	store             keyval.KV
@@ -74,7 +74,7 @@ func NewServer(cfg *config.Config) *Server {
 		replicationID = utils.GenerateRandomAlphanumeric(40)
 	}
 	s := &Server{
-		mu:                sync.Mutex{},
+		mu:                sync.RWMutex{},
 		cfg:               cfg,
 		done:              make(chan struct{}),
 		store:             store,
@@ -506,6 +506,9 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	if err != nil {
 		return s.writeError(cl, err)
 	}
+	if _, isWait := cmd.(*command.Wait); isWait {
+		s.sendReplConfGetAckToAllReplicas(ctx)
+	}
 	isBlocking := cmd.IsBlocking(args)
 	if isBlocking {
 		go s.handleBlockingCommand(ctx, cl, cmd, writer, args)
@@ -517,7 +520,7 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 		return s.writeError(cl, err)
 	}
 	if _, ok := config.WriteableCommands[cmdName]; ok {
-		s.propagateCommand(ctx, r)
+		s.propagateCommand(ctx, cl, r)
 	}
 	if cmdName == "replconf" && len(args) > 0 && args[0].String() == "listening-port" {
 		s.addReplica(cl)
@@ -526,13 +529,16 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	return nil
 }
 
-func (s *Server) propagateCommand(ctx context.Context, r *resp.Resp) {
+func (s *Server) propagateCommand(ctx context.Context, cl *client.Client, r *resp.Resp) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	rawResp := r.RAW()
+	s.offset += uint64(len(rawResp))
+	cl.SetLastWriteOffset(s.offset)
 
 	// Send the command to each replica
 	for replica := range s.replicas {
-		_, err := replica.Conn().Write(r.RAW())
+		_, err := replica.Conn().Write(rawResp)
 		if err != nil {
 			logger.Error(ctx, "Failed to send command to replica %s: %v", replica.ID, err)
 			// Remove disconnected replica
@@ -575,40 +581,48 @@ func (s *Server) sendReplConfGetAck(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.mu.Lock()
-			replicas := make([]*client.Client, 0, len(s.replicas))
-			for replica := range s.replicas {
-				replicas = append(replicas, replica)
-			}
-			s.mu.Unlock()
-
-			for _, replica := range replicas {
-				go func(replica *client.Client) {
-					getAckCmd := resp.CreateCommand("REPLCONF", "GETACK", "*")
-					_, err := replica.Writer.Write(getAckCmd)
-					if err != nil {
-						logger.Error(ctx, "Failed to write REPLCONF GETACK to replica %s: %v", replica.ID, err)
-						s.removeReplica(ctx, replica)
-						return
-					}
-					err = replica.Writer.Flush()
-					if err != nil {
-						if errors.Is(err, net.ErrClosed) {
-							logger.Info(ctx, "Failed to flush REPLCONF GETACK to replica %s, replica disconnected", replica.ID)
-						} else {
-							logger.Error(ctx, "Failed to flush REPLCONF GETACK to replica %s: %v", replica.ID, err)
-						}
-						s.removeReplica(ctx, replica)
-						return
-					}
-				}(replica)
-			}
+			s.sendReplConfGetAckToAllReplicas(ctx)
 		}
+	}
+}
+
+func (s *Server) sendReplConfGetAckToAllReplicas(ctx context.Context) {
+	s.mu.Lock()
+	replicas := make([]*client.Client, 0, len(s.replicas))
+	for replica := range s.replicas {
+		replicas = append(replicas, replica)
+	}
+	getAckCmd := resp.CreateCommand("REPLCONF", "GETACK", "*")
+	s.offset += uint64(len(getAckCmd))
+	s.mu.Unlock()
+
+	for _, replica := range replicas {
+		go func(replica *client.Client) {
+			_, err := replica.Writer.Write(getAckCmd)
+			if err != nil {
+				logger.Error(ctx, "Failed to write REPLCONF GETACK to replica %s: %v", replica.ID, err)
+				s.removeReplica(ctx, replica)
+				return
+			}
+			err = replica.Writer.Flush()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					logger.Info(ctx, "Failed to flush REPLCONF GETACK to replica %s, replica disconnected", replica.ID)
+				} else {
+					logger.Error(ctx, "Failed to flush REPLCONF GETACK to replica %s: %v", replica.ID, err)
+				}
+				s.removeReplica(ctx, replica)
+				return
+			}
+		}(replica)
 	}
 }
 
 func (s *Server) sendPing(replica *client.Client) error {
 	pingCmd := resp.CreatePingCommand()
+	s.mu.Lock()
+	s.offset += uint64(len(pingCmd))
+	s.mu.Unlock()
 
 	_, err := replica.Conn().Write(pingCmd)
 	if err != nil {
@@ -698,4 +712,16 @@ func (s *Server) GetReplicationID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.replicationID
+}
+
+func (s *Server) GetReplicaAcknowledgedCount(offset uint64) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for replica := range s.replicas {
+		if replica.Offset() >= offset {
+			count++
+		}
+	}
+	return count
 }
