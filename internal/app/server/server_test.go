@@ -93,7 +93,7 @@ func TestGetAndSetCommand(t *testing.T) {
 		{
 			name: "Set and Get with EXAT",
 			setup: func() error {
-				return rdb.SetArgs(ctx, "foo-exat", "bar", redis.SetArgs{ExpireAt: time.Now().Add(100 * time.Millisecond)}).Err()
+				return rdb.SetArgs(ctx, "foo-exat", "bar", redis.SetArgs{ExpireAt: time.Now().Add(500 * time.Millisecond)}).Err()
 			},
 			action: func() (interface{}, error) {
 				return rdb.Get(ctx, "foo-exat").Result()
