@@ -41,19 +41,54 @@ type Client struct {
 	Writer               *resp.Writer
 	closed               bool
 	lastWriteOffset      uint64
+	inTransaction        bool
+	txQueue              []*resp.Resp
 }
 
 func NewClient(conn net.Conn, messageChan chan<- Message) *Client {
 	bw := bufio.NewWriter(conn)
 	return &Client{
-		conn:            conn,
-		lastInteraction: time.Now(),
-		disconnectChan:  make(chan *Client),
-		messageChan:     messageChan,
-		bw:              bw,
-		Writer:          resp.NewWriter(bw, resp.DefaultVersion),
-		mu:              sync.RWMutex{},
+		conn:                 conn,
+		lastInteraction:      time.Now(),
+		disconnectChan:       make(chan *Client),
+		messageChan:          messageChan,
+		bw:                   bw,
+		Writer:               resp.NewWriter(bw, resp.DefaultVersion),
+		preferredRespVersion: int(resp.DefaultVersion),
+		mu:                   sync.RWMutex{},
 	}
+}
+
+func (c *Client) StartTransaction() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inTransaction = true
+	c.txQueue = []*resp.Resp{}
+}
+
+func (c *Client) IsInTransaction() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.inTransaction
+}
+
+func (c *Client) EnqueueCommand(r *resp.Resp) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.txQueue = append(c.txQueue, r)
+}
+
+func (c *Client) GetTransactionQueue() []*resp.Resp {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.txQueue
+}
+
+func (c *Client) ClearTransaction() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inTransaction = false
+	c.txQueue = nil
 }
 
 func (c *Client) GetLastWriteOffset() uint64 {
