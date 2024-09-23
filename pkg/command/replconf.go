@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/client"
@@ -25,10 +26,20 @@ func (rc *ReplConf) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp
 		port := args[1].String()
 		c.ListeningPort = port
 	case "capa":
-		// if len(args) < 2 {
-		// 	return wr.WriteError(errors.New("wrong number of arguments for 'replconf capa' command"))
-		// }
-		// We don't need to handle/save the capa arguments
+	// if len(args) < 2 {
+	// 	return wr.WriteError(errors.New("wrong number of arguments for 'replconf capa' command"))
+	// }
+	// We don't need to handle/save the capa arguments
+	case "ack":
+		if len(args) != 2 {
+			return wr.WriteError(errors.New("wrong number of arguments for 'replconf ack' command"))
+		}
+		offsetStr := args[1].String()
+		offset, err := strconv.ParseUint(offsetStr, 10, 64)
+		if err != nil {
+			return wr.WriteError(fmt.Errorf("invalid offset in REPLCONF ACK: %v", err))
+		}
+		c.UpdateOffset(offset)
 	default:
 		return wr.WriteError(fmt.Errorf("unknown replconf subcommand: %s", subCommand))
 	}
