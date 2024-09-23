@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
+	"github.com/mhughdo/src/pkg/keyval"
 )
 
 func TestRDBParser(t *testing.T) {

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
-	"github.com/codecrafters-io/redis-starter-go/internal/client"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/mhughdo/src/internal/app/server/config"
+	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/keyval"
+	"github.com/mhughdo/src/pkg/resp"
 )
 
 var (
@@ -86,6 +86,7 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			"xread":    &XRead{kv: kv},
 			"replconf": &ReplConf{},
 			"psync": &Psync{
+				kv:         kv,
 				serverInfo: serverInfo,
 			},
 			"save": &Save{kv: kv},

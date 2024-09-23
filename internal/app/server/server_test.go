@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/app/server/config"
+	"github.com/mhughdo/src/internal/app/server/config"
 	"github.com/redis/go-redis/v9"
 	"github.com/test-go/testify/assert"
 	"github.com/test-go/testify/require"
@@ -93,7 +93,7 @@ func TestGetAndSetCommand(t *testing.T) {
 		{
 			name: "Set and Get with EXAT",
 			setup: func() error {
-				return rdb.SetArgs(ctx, "foo-exat", "bar", redis.SetArgs{ExpireAt: time.Now().Add(500 * time.Millisecond)}).Err()
+				return rdb.SetArgs(ctx, "foo-exat", "bar", redis.SetArgs{ExpireAt: time.Now().Add(200 * time.Millisecond)}).Err()
 			},
 			action: func() (interface{}, error) {
 				return rdb.Get(ctx, "foo-exat").Result()

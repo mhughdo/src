@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/client"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/keyval"
+	"github.com/mhughdo/src/pkg/resp"
 )
 
 type Set struct {

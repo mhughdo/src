@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/codecrafters-io/redis-starter-go/internal/client"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
-	"github.com/codecrafters-io/redis-starter-go/pkg/rdb"
-	"github.com/codecrafters-io/redis-starter-go/pkg/resp"
+	"github.com/mhughdo/src/internal/client"
+	"github.com/mhughdo/src/pkg/keyval"
+	"github.com/mhughdo/src/pkg/rdb"
+	"github.com/mhughdo/src/pkg/resp"
 )
 
 // SaveCommand implements the SAVE command.

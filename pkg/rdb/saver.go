@@ -7,8 +7,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/codecrafters-io/redis-starter-go/pkg/crc64"
-	"github.com/codecrafters-io/redis-starter-go/pkg/keyval"
+	"github.com/mhughdo/src/pkg/crc64"
+	"github.com/mhughdo/src/pkg/keyval"
 )
 
 type RDBSaver struct {
@@ -201,6 +201,22 @@ func (s *RDBSaver) SaveRDB(wr io.Writer) error {
 		return err
 	}
 	if err := s.writeLength(0); err != nil {
+		return err
+	}
+
+	if err := s.writeByte(RDBMarkerResizeDB); err != nil {
+		return err
+	}
+	expirySize := 0
+	for _, val := range s.data {
+		if val.Expiry > 0 {
+			expirySize++
+		}
+	}
+	if err := s.writeLength(uint64(len(s.data))); err != nil {
+		return err
+	}
+	if err := s.writeLength(uint64(expirySize)); err != nil {
 		return err
 	}
 
