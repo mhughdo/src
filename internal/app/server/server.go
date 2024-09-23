@@ -558,8 +558,6 @@ func (s *Server) pingReplicas(ctx context.Context) {
 					if err != nil {
 						logger.Error(ctx, "Failed to ping replica %s: %v", replica.ID, err)
 						s.removeReplica(ctx, replica)
-					} else {
-						// logger.Info(ctx, "Successfully pinged replica %s", replica.ID)
 					}
 				}(replica)
 			}
