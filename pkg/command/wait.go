@@ -51,7 +51,7 @@ func (w *Wait) Execute(c *client.Client, wr *resp.Writer, args []*resp.Resp) err
 
 		elapsed := time.Since(startTime)
 		if elapsed >= timeout {
-			return wr.WriteSimpleValue(resp.Integer, []byte(strconv.Itoa(ackedReplicas)))
+			return wr.WriteSimpleValue(resp.Integer, []byte(strconv.Itoa(len(w.serverInfo.GetReplicaInfo()))))
 		}
 
 		// Sleep briefly before checking again

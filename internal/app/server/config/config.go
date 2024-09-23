@@ -16,8 +16,9 @@ const (
 
 var (
 	WriteableCommands = map[string]struct{}{
-		"set": {},
-		"del": {},
+		"set":  {},
+		"del":  {},
+		"incr": {},
 	}
 )
 

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -14,10 +15,18 @@ var (
 	ErrCommandNotFound = errors.New("unknown command")
 )
 
+var TransactionCommands = map[string]struct{}{
+	"multi":   {},
+	"exec":    {},
+	"discard": {},
+}
+
 type ServerInfoProvider interface {
 	GetReplicaInfo() []map[string]string
 	GetReplicationID() string
 	GetReplicaAcknowledgedCount(offset uint64) int
+	PropagateCommand(ctx context.Context, cl *client.Client, r *resp.Resp)
+	GetCommand(cmd string) (Command, error)
 }
 
 type Command interface {
@@ -81,6 +90,12 @@ func NewCommandFactory(kv keyval.KV, cfg *config.Config, serverInfo ServerInfoPr
 			},
 			"save": &Save{kv: kv},
 			"wait": &Wait{
+				serverInfo: serverInfo,
+			},
+			"incr":    &Incr{kv: kv},
+			"multi":   &Multi{},
+			"discard": &Discard{},
+			"exec": &Exec{
 				serverInfo: serverInfo,
 			},
 		},

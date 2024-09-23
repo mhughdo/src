@@ -506,6 +506,12 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	if err != nil {
 		return s.writeError(cl, err)
 	}
+	if cl.IsInTransaction() {
+		if _, ok := command.TransactionCommands[cmdName]; !ok {
+			cl.EnqueueCommand(r)
+			return writer.WriteSimpleValue(resp.SimpleString, []byte("QUEUED"))
+		}
+	}
 	if _, isWait := cmd.(*command.Wait); isWait {
 		s.sendReplConfGetAckToAllReplicas(ctx)
 	}
@@ -520,7 +526,7 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 		return s.writeError(cl, err)
 	}
 	if _, ok := config.WriteableCommands[cmdName]; ok {
-		s.propagateCommand(ctx, cl, r)
+		s.PropagateCommand(ctx, cl, r)
 	}
 	if cmdName == "replconf" && len(args) > 0 && args[0].String() == "listening-port" {
 		s.addReplica(cl)
@@ -529,7 +535,7 @@ func (s *Server) handleMessage(ctx context.Context, cl *client.Client, r *resp.R
 	return nil
 }
 
-func (s *Server) propagateCommand(ctx context.Context, cl *client.Client, r *resp.Resp) {
+func (s *Server) PropagateCommand(ctx context.Context, cl *client.Client, r *resp.Resp) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rawResp := r.RAW()
@@ -724,4 +730,8 @@ func (s *Server) GetReplicaAcknowledgedCount(offset uint64) int {
 		}
 	}
 	return count
+}
+
+func (s *Server) GetCommand(cmdName string) (command.Command, error) {
+	return s.cFactory.GetCommand(cmdName)
 }

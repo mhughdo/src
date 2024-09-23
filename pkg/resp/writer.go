@@ -88,45 +88,45 @@ func (w *Writer) writeResp2Value(value any) error {
 	case *string:
 		return w.WriteString(*v)
 	case int:
-		return w.writeResp2Int(int64(v))
+		return w.writeInt(int64(v))
 	case *int:
-		return w.writeResp2Int(int64(*v))
+		return w.writeInt(int64(*v))
 	case int8:
-		return w.writeResp2Int(int64(v))
+		return w.writeInt(int64(v))
 	case *int8:
-		return w.writeResp2Int(int64(*v))
+		return w.writeInt(int64(*v))
 	case int16:
-		return w.writeResp2Int(int64(v))
+		return w.writeInt(int64(v))
 	case *int16:
-		return w.writeResp2Int(int64(*v))
+		return w.writeInt(int64(*v))
 	case int32:
-		return w.writeResp2Int(int64(v))
+		return w.writeInt(int64(v))
 	case *int32:
-		return w.writeResp2Int(int64(*v))
+		return w.writeInt(int64(*v))
 	case int64:
-		return w.writeResp2Int(v)
+		return w.writeInt(v)
 	case *int64:
-		return w.writeResp2Int(*v)
+		return w.writeInt(*v)
 	case uint:
-		return w.writeResp2Uint(uint64(v))
+		return w.writeUint(uint64(v))
 	case *uint:
-		return w.writeResp2Uint(uint64(*v))
+		return w.writeUint(uint64(*v))
 	case uint8:
-		return w.writeResp2Uint(uint64(v))
+		return w.writeUint(uint64(v))
 	case *uint8:
-		return w.writeResp2Uint(uint64(*v))
+		return w.writeUint(uint64(*v))
 	case uint16:
-		return w.writeResp2Uint(uint64(v))
+		return w.writeUint(uint64(v))
 	case *uint16:
-		return w.writeResp2Uint(uint64(*v))
+		return w.writeUint(uint64(*v))
 	case uint32:
-		return w.writeResp2Uint(uint64(v))
+		return w.writeUint(uint64(v))
 	case *uint32:
-		return w.writeResp2Uint(uint64(*v))
+		return w.writeUint(uint64(*v))
 	case uint64:
-		return w.writeResp2Uint(uint64(v))
+		return w.writeUint(uint64(v))
 	case *uint64:
-		return w.writeResp2Uint(uint64(*v))
+		return w.writeUint(uint64(*v))
 	case float32:
 		return w.writeResp2Float(float64(v))
 	case *float32:
@@ -137,19 +137,19 @@ func (w *Writer) writeResp2Value(value any) error {
 		return w.writeResp2Float(*v)
 	case bool:
 		if v {
-			return w.writeResp2Int(1)
+			return w.WriteString("1")
 		}
-		return w.writeResp2Int(0)
+		return w.WriteString("0")
 	case *bool:
 		if *v {
-			return w.writeResp2Int(1)
+			return w.WriteString("1")
 		}
-		return w.writeResp2Int(0)
+		return w.WriteString("0")
 	case time.Time:
 		w.numBuf = v.AppendFormat(w.numBuf[:0], time.RFC3339Nano)
 		return w.writeBytesWithType(BulkString, w.numBuf)
 	case time.Duration:
-		return w.writeResp2Int(v.Nanoseconds())
+		return w.writeInt(v.Nanoseconds())
 	case encoding.BinaryMarshaler:
 		b, err := v.MarshalBinary()
 		if err != nil {
@@ -273,16 +273,6 @@ func (w *Writer) writeResp3Value(value any) error {
 	}
 }
 
-func (w *Writer) writeResp2Int(n int64) error {
-	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatInt(n, 10))...)
-	return w.writeBytesWithType(BulkString, w.numBuf)
-}
-
-func (w *Writer) writeResp2Uint(n uint64) error {
-	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatUint(n, 10))...)
-	return w.writeBytesWithType(BulkString, w.numBuf)
-}
-
 func (w *Writer) writeResp2Float(f float64) error {
 	w.numBuf = append(w.numBuf[:0], []byte(strconv.FormatFloat(f, 'f', -1, 64))...)
 	return w.writeBytesWithType(BulkString, w.numBuf)
@@ -301,6 +291,14 @@ func (w *Writer) WriteStringSlice(v []string) error {
 		}
 	}
 	return nil
+}
+
+func (w *Writer) WriteInteger(i int64) error {
+	if w.respVersion == RESP2 {
+		return w.writeInt(i)
+	}
+
+	return w.writeInt(i)
 }
 
 func (w *Writer) WriteSlice(v any) error {
