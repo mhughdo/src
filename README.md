@@ -45,7 +45,7 @@ A simple Redis clone written in Go.
 
 ### Replication
 
-Partitally support for single leader replication. The following commands are
+Partially support for single leader replication. The following commands are
 supported:
 
 - SAVE
