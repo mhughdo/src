@@ -1,6 +1,6 @@
 # SRC (Simple Redis Clone)
 
-A simple Redis clone written in Go. 
+A simple Redis clone written in Go.
 
 ## Running the server
 
@@ -40,12 +40,13 @@ A simple Redis clone written in Go.
 ### Streams
 
 - XADD
-- XLEN
+- XRANGE
 - XREAD
 
 ### Replication
 
-Partial support for master-replica replication.
+Partitally support for single leader replication. The following commands are
+supported:
 
 - SAVE
 - PSYNC
